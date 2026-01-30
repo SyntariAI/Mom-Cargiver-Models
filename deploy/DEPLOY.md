@@ -101,27 +101,91 @@ docker-compose -f docker-compose.prod.yml restart frontend
 
 ---
 
+## Safe Updates (IMPORTANT!)
+
+### How Data is Protected
+
+Your database lives in a **Docker volume** (`app_data`), separate from the code containers:
+
+```
+Docker Volume (app_data)     ← YOUR DATA (persistent, survives updates)
+    └── caregiver.db
+
+Docker Containers            ← CODE (rebuilt on updates)
+    ├── care-backend
+    └── care-frontend
+```
+
+**Safe operations (won't lose data):**
+- `docker stop/start` containers
+- `docker rm` containers
+- Rebuilding images
+- Running `update.sh`
+
+**DANGEROUS operations (WILL lose data):**
+- `docker volume rm app_data` ← NEVER DO THIS
+- `docker system prune --volumes` ← DANGEROUS
+
+---
+
+### Recommended: Use the Safe Update Script
+
+```bash
+# SSH into your server
+ssh -i your-key.pem ec2-user@3.228.174.7
+
+# Run safe update (auto-backup + schema change detection)
+cd ~/moms-care-tracker/deploy
+chmod +x update.sh
+./update.sh
+```
+
+The update script will:
+1. ✅ **Backup database** before any changes
+2. ✅ **Detect schema changes** in models.py and warn you
+3. ✅ **Detect migrations** and require confirmation
+4. ✅ **Rebuild containers** without touching data volume
+5. ✅ **Verify data** is intact after deployment
+
+---
+
+### If Something Goes Wrong: Restore from Backup
+
+```bash
+# List available backups
+ls -la ~/backups/
+
+# Restore a specific backup
+cd ~/moms-care-tracker/deploy
+chmod +x restore-backup.sh
+./restore-backup.sh caregiver_20260130_150000.db
+```
+
+---
+
 ## Maintenance
 
 ### View Logs
 ```bash
-docker-compose -f docker-compose.prod.yml logs -f
+docker logs care-backend --tail 100 -f
+docker logs care-frontend --tail 100 -f
 ```
 
 ### Restart Services
 ```bash
-docker-compose -f docker-compose.prod.yml restart
+docker restart care-backend care-frontend
 ```
 
-### Update Application
+### Manual Backup
 ```bash
-git pull
-docker-compose -f docker-compose.prod.yml up -d --build
+docker cp care-backend:/app/data/caregiver.db ~/backups/manual-backup-$(date +%Y%m%d).db
 ```
 
-### Backup Database
+### Change Login Password
 ```bash
-docker cp $(docker-compose -f docker-compose.prod.yml ps -q backend):/app/data/caregiver.db ./backup-$(date +%Y%m%d).db
+cd ~/moms-care-tracker/deploy
+htpasswd htpasswd USERNAME   # Enter new password when prompted
+docker restart care-frontend
 ```
 
 ---
