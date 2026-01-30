@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -36,6 +36,9 @@ import {
 import { DataTable, createSortableHeader } from '@/components/ui/data-table';
 import { DateRangePicker, type DateRangeValue } from '@/components/filters/DateRangePicker';
 import { MultiSelect, type MultiSelectOption } from '@/components/filters/MultiSelect';
+import { EditableCell, type SelectOption } from '@/components/ui/editable-cell';
+import { EditDialog, type FieldConfig } from '@/components/EditDialog';
+import { useToast } from '@/hooks/use-toast';
 
 import {
   useTimeEntries,
@@ -304,12 +307,27 @@ const formatDate = (dateStr: string) => {
   return format(new Date(dateStr), 'MMM d, yyyy');
 };
 
+// Edit Dialog Schema
+const editTimeEntrySchema = z.object({
+  caregiver_id: z.string().min(1, 'Caregiver is required'),
+  date: z.string().min(1, 'Date is required'),
+  time_in: z.string().optional(),
+  time_out: z.string().optional(),
+  hours: z.string().min(1, 'Hours is required'),
+  hourly_rate: z.string().min(1, 'Hourly rate is required'),
+  notes: z.string().optional(),
+});
+
 export function TimeEntries() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | undefined>();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState<TimeEntry | undefined>();
+
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogEntry, setEditDialogEntry] = useState<TimeEntry | null>(null);
 
   // Filter states
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
@@ -321,14 +339,54 @@ export function TimeEntries() {
   const { data: caregivers = [] } = useCaregivers();
   const { data: entries = [], isLoading } = useTimeEntries(selectedPeriodId);
   const deleteTimeEntry = useDeleteTimeEntry();
+  const updateTimeEntry = useUpdateTimeEntry();
+  const { toast } = useToast();
 
-  // Caregiver options for multi-select
+  // Caregiver options for multi-select and inline editing
   const caregiverOptions: MultiSelectOption[] = useMemo(() => {
     return caregivers.map((c) => ({
       value: c.id.toString(),
       label: c.name,
     }));
   }, [caregivers]);
+
+  const activeCaregiverOptions: SelectOption[] = useMemo(() => {
+    return caregivers
+      .filter((c) => c.is_active)
+      .map((c) => ({
+        value: c.id.toString(),
+        label: c.name,
+      }));
+  }, [caregivers]);
+
+  // Helper to get caregiver name
+  const getCaregiverName = useCallback((caregiverId: number) => {
+    const caregiver = caregivers.find((c) => c.id === caregiverId);
+    return caregiver?.name || '-';
+  }, [caregivers]);
+
+  // Inline update handler
+  const handleInlineUpdate = useCallback(async (
+    entryId: number,
+    field: string,
+    value: string
+  ) => {
+    try {
+      const data: Partial<TimeEntry> = { [field]: field === 'caregiver_id' ? Number(value) : value };
+      await updateTimeEntry.mutateAsync({ id: entryId, data });
+      toast({
+        title: 'Updated',
+        description: 'Time entry updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update time entry.',
+        variant: 'destructive',
+      });
+      throw error; // Re-throw to trigger error animation
+    }
+  }, [updateTimeEntry, toast]);
 
   // Filter and sort entries
   const filteredEntries = useMemo(() => {
@@ -382,9 +440,9 @@ export function TimeEntries() {
     );
   }, [filteredEntries]);
 
-  const handleEdit = (entry: TimeEntry) => {
-    setEditingEntry(entry);
-    setDialogOpen(true);
+  const handleEditDialog = (entry: TimeEntry) => {
+    setEditDialogEntry(entry);
+    setEditDialogOpen(true);
   };
 
   const handleDeleteClick = (entry: TimeEntry) => {
@@ -398,8 +456,17 @@ export function TimeEntries() {
         await deleteTimeEntry.mutateAsync(deletingEntry.id);
         setDeleteDialogOpen(false);
         setDeletingEntry(undefined);
+        toast({
+          title: 'Deleted',
+          description: 'Time entry deleted successfully.',
+        });
       } catch (error) {
         console.error('Failed to delete time entry:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to delete time entry.',
+          variant: 'destructive',
+        });
       }
     }
   };
@@ -423,18 +490,117 @@ export function TimeEntries() {
     minHours !== '' ||
     maxHours !== '';
 
+  // Edit dialog fields config
+  const editDialogFields: FieldConfig[] = useMemo(() => [
+    {
+      name: 'date',
+      label: 'Date',
+      type: 'date',
+      required: true,
+    },
+    {
+      name: 'caregiver_id',
+      label: 'Caregiver',
+      type: 'select',
+      options: activeCaregiverOptions,
+      required: true,
+    },
+    {
+      name: 'time_in',
+      label: 'Time In',
+      type: 'time',
+    },
+    {
+      name: 'time_out',
+      label: 'Time Out',
+      type: 'time',
+    },
+    {
+      name: 'hours',
+      label: 'Hours',
+      type: 'number',
+      step: '0.25',
+      min: '0',
+      required: true,
+    },
+    {
+      name: 'hourly_rate',
+      label: 'Hourly Rate ($)',
+      type: 'number',
+      step: '0.01',
+      min: '0',
+      required: true,
+    },
+    {
+      name: 'notes',
+      label: 'Notes',
+      type: 'textarea',
+    },
+  ], [activeCaregiverOptions]);
+
+  const handleEditDialogSubmit = async (values: z.infer<typeof editTimeEntrySchema>) => {
+    if (!editDialogEntry) return;
+
+    try {
+      await updateTimeEntry.mutateAsync({
+        id: editDialogEntry.id,
+        data: {
+          caregiver_id: Number(values.caregiver_id),
+          date: values.date,
+          time_in: values.time_in || null,
+          time_out: values.time_out || null,
+          hours: values.hours,
+          hourly_rate: values.hourly_rate,
+          notes: values.notes || null,
+        },
+      });
+      toast({
+        title: 'Updated',
+        description: 'Time entry updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update time entry.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
   // Define columns for DataTable
   const columns: ColumnDef<TimeEntry>[] = useMemo(
     () => [
       {
         accessorKey: 'date',
         header: createSortableHeader('Date'),
-        cell: ({ row }) => formatDate(row.getValue('date')),
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <EditableCell
+              value={entry.date}
+              displayValue={formatDate(entry.date)}
+              type="date"
+              onSave={(value) => handleInlineUpdate(entry.id, 'date', value)}
+            />
+          );
+        },
       },
       {
         accessorKey: 'caregiver_name',
         header: createSortableHeader('Caregiver'),
-        cell: ({ row }) => row.getValue('caregiver_name') || '-',
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <EditableCell
+              value={entry.caregiver_id.toString()}
+              displayValue={getCaregiverName(entry.caregiver_id)}
+              type="select"
+              options={activeCaregiverOptions}
+              onSave={(value) => handleInlineUpdate(entry.id, 'caregiver_id', value)}
+            />
+          );
+        },
       },
       {
         accessorKey: 'time_in',
@@ -449,16 +615,41 @@ export function TimeEntries() {
       {
         accessorKey: 'hours',
         header: createSortableHeader('Hours'),
-        cell: ({ row }) => (
-          <div className="text-right">{row.getValue('hours')}</div>
-        ),
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <div className="text-right">
+              <EditableCell
+                value={entry.hours}
+                type="number"
+                step="0.25"
+                min="0"
+                onSave={(value) => handleInlineUpdate(entry.id, 'hours', value)}
+                inputClassName="text-right"
+              />
+            </div>
+          );
+        },
       },
       {
         accessorKey: 'hourly_rate',
         header: createSortableHeader('Rate'),
-        cell: ({ row }) => (
-          <div className="text-right">{formatCurrency(row.getValue('hourly_rate'))}</div>
-        ),
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <div className="text-right">
+              <EditableCell
+                value={entry.hourly_rate}
+                displayValue={formatCurrency(entry.hourly_rate)}
+                type="number"
+                step="0.01"
+                min="0"
+                onSave={(value) => handleInlineUpdate(entry.id, 'hourly_rate', value)}
+                inputClassName="text-right"
+              />
+            </div>
+          );
+        },
       },
       {
         accessorKey: 'total_pay',
@@ -477,7 +668,8 @@ export function TimeEntries() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => handleEdit(row.original)}
+              onClick={() => handleEditDialog(row.original)}
+              title="Edit all fields"
             >
               <Pencil className="h-4 w-4" />
             </Button>
@@ -494,7 +686,7 @@ export function TimeEntries() {
         enableHiding: false,
       },
     ],
-    []
+    [activeCaregiverOptions, getCaregiverName, handleInlineUpdate]
   );
 
   // Footer content for totals
@@ -683,6 +875,28 @@ export function TimeEntries() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Full Edit Dialog */}
+      {editDialogEntry && (
+        <EditDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          title="Edit Time Entry"
+          fields={editDialogFields}
+          schema={editTimeEntrySchema}
+          defaultValues={{
+            caregiver_id: editDialogEntry.caregiver_id.toString(),
+            date: editDialogEntry.date,
+            time_in: editDialogEntry.time_in || '',
+            time_out: editDialogEntry.time_out || '',
+            hours: editDialogEntry.hours,
+            hourly_rate: editDialogEntry.hourly_rate,
+            notes: editDialogEntry.notes || '',
+          }}
+          onSubmit={handleEditDialogSubmit}
+          isLoading={updateTimeEntry.isPending}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -37,6 +37,9 @@ import {
 import { DataTable, createSortableHeader } from '@/components/ui/data-table';
 import { DateRangePicker, type DateRangeValue } from '@/components/filters/DateRangePicker';
 import { MultiSelect, type MultiSelectOption } from '@/components/filters/MultiSelect';
+import { EditableCell, type SelectOption } from '@/components/ui/editable-cell';
+import { EditDialog, type FieldConfig } from '@/components/EditDialog';
+import { useToast } from '@/hooks/use-toast';
 
 import {
   useExpenses,
@@ -87,10 +90,25 @@ const formatDate = (dateStr: string) => {
   return format(new Date(dateStr), 'MMM d, yyyy');
 };
 
+// Edit Dialog Schema
+const editExpenseSchema = z.object({
+  description: z.string().min(1, 'Description is required'),
+  amount: z.string().min(1, 'Amount is required'),
+  date: z.string().min(1, 'Date is required'),
+  paid_by: z.string().min(1, 'Please select who paid'),
+  category: z.string().min(1, 'Please select a category'),
+  is_recurring: z.boolean(),
+  notes: z.string().optional(),
+});
+
 export function Expenses() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>(undefined);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
+  // Edit dialog state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editDialogExpense, setEditDialogExpense] = useState<Expense | null>(null);
 
   // Filter states
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
@@ -106,6 +124,7 @@ export function Expenses() {
   const createExpense = useCreateExpense();
   const updateExpense = useUpdateExpense();
   const deleteExpense = useDeleteExpense();
+  const { toast } = useToast();
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -130,6 +149,40 @@ export function Expenses() {
     value: cat,
     label: cat,
   }));
+
+  // Select options for inline editing
+  const paidBySelectOptions: SelectOption[] = [
+    { value: 'Adi', label: 'Adi' },
+    { value: 'Rafi', label: 'Rafi' },
+  ];
+
+  const categorySelectOptions: SelectOption[] = EXPENSE_CATEGORIES.map((cat) => ({
+    value: cat,
+    label: cat,
+  }));
+
+  // Inline update handler
+  const handleInlineUpdate = useCallback(async (
+    expenseId: number,
+    field: string,
+    value: string
+  ) => {
+    try {
+      const data: Partial<Expense> = { [field]: value };
+      await updateExpense.mutateAsync({ id: expenseId, data });
+      toast({
+        title: 'Updated',
+        description: 'Expense updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update expense.',
+        variant: 'destructive',
+      });
+      throw error; // Re-throw to trigger error animation
+    }
+  }, [updateExpense, toast]);
 
   // Filter and sort expenses
   const filteredExpenses = useMemo(() => {
@@ -218,6 +271,11 @@ export function Expenses() {
     setIsDialogOpen(true);
   };
 
+  const handleEditDialog = (expense: Expense) => {
+    setEditDialogExpense(expense);
+    setEditDialogOpen(true);
+  };
+
   const handleSubmit = async (values: ExpenseFormValues) => {
     const expenseData = {
       description: values.description,
@@ -230,23 +288,51 @@ export function Expenses() {
       pay_period_id: selectedPeriodId,
     };
 
-    if (editingExpense) {
-      await updateExpense.mutateAsync({
-        id: editingExpense.id,
-        data: expenseData,
-      });
-    } else {
-      await createExpense.mutateAsync(expenseData);
-    }
+    try {
+      if (editingExpense) {
+        await updateExpense.mutateAsync({
+          id: editingExpense.id,
+          data: expenseData,
+        });
+        toast({
+          title: 'Updated',
+          description: 'Expense updated successfully.',
+        });
+      } else {
+        await createExpense.mutateAsync(expenseData);
+        toast({
+          title: 'Created',
+          description: 'Expense created successfully.',
+        });
+      }
 
-    setIsDialogOpen(false);
-    form.reset();
-    setEditingExpense(null);
+      setIsDialogOpen(false);
+      form.reset();
+      setEditingExpense(null);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to save expense.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleDelete = async (id: number) => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
-      await deleteExpense.mutateAsync(id);
+      try {
+        await deleteExpense.mutateAsync(id);
+        toast({
+          title: 'Deleted',
+          description: 'Expense deleted successfully.',
+        });
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Failed to delete expense.',
+          variant: 'destructive',
+        });
+      }
     }
   };
 
@@ -266,13 +352,101 @@ export function Expenses() {
     minAmount !== '' ||
     maxAmount !== '';
 
+  // Edit dialog fields config
+  const editDialogFields: FieldConfig[] = useMemo(() => [
+    {
+      name: 'date',
+      label: 'Date',
+      type: 'date',
+      required: true,
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'text',
+      required: true,
+    },
+    {
+      name: 'amount',
+      label: 'Amount ($)',
+      type: 'number',
+      step: '0.01',
+      min: '0',
+      required: true,
+    },
+    {
+      name: 'paid_by',
+      label: 'Paid By',
+      type: 'select',
+      options: paidBySelectOptions,
+      required: true,
+    },
+    {
+      name: 'category',
+      label: 'Category',
+      type: 'select',
+      options: categorySelectOptions,
+      required: true,
+    },
+    {
+      name: 'is_recurring',
+      label: 'Is Recurring',
+      type: 'checkbox',
+    },
+    {
+      name: 'notes',
+      label: 'Notes',
+      type: 'textarea',
+    },
+  ], []);
+
+  const handleEditDialogSubmit = async (values: z.infer<typeof editExpenseSchema>) => {
+    if (!editDialogExpense) return;
+
+    try {
+      await updateExpense.mutateAsync({
+        id: editDialogExpense.id,
+        data: {
+          description: values.description,
+          amount: values.amount,
+          date: values.date,
+          paid_by: values.paid_by as 'Adi' | 'Rafi',
+          category: values.category as ExpenseCategory,
+          is_recurring: values.is_recurring,
+          notes: values.notes || null,
+        },
+      });
+      toast({
+        title: 'Updated',
+        description: 'Expense updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update expense.',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
   // Define columns for DataTable
   const columns: ColumnDef<Expense>[] = useMemo(
     () => [
       {
         accessorKey: 'date',
         header: createSortableHeader('Date'),
-        cell: ({ row }) => formatDate(row.getValue('date')),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <EditableCell
+              value={expense.date}
+              displayValue={formatDate(expense.date)}
+              type="date"
+              onSave={(value) => handleInlineUpdate(expense.id, 'date', value)}
+            />
+          );
+        },
       },
       {
         accessorKey: 'description',
@@ -281,7 +455,11 @@ export function Expenses() {
           const expense = row.original;
           return (
             <div className="flex items-center gap-2">
-              {expense.description}
+              <EditableCell
+                value={expense.description}
+                type="text"
+                onSave={(value) => handleInlineUpdate(expense.id, 'description', value)}
+              />
               {expense.is_recurring && (
                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
                   Recurring
@@ -294,19 +472,52 @@ export function Expenses() {
       {
         accessorKey: 'category',
         header: createSortableHeader('Category'),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <EditableCell
+              value={expense.category}
+              type="select"
+              options={categorySelectOptions}
+              onSave={(value) => handleInlineUpdate(expense.id, 'category', value)}
+            />
+          );
+        },
       },
       {
         accessorKey: 'amount',
         header: createSortableHeader('Amount'),
-        cell: ({ row }) => (
-          <div className="text-right font-medium">
-            {formatCurrency(row.getValue('amount'))}
-          </div>
-        ),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <div className="text-right font-medium">
+              <EditableCell
+                value={expense.amount}
+                displayValue={formatCurrency(expense.amount)}
+                type="number"
+                step="0.01"
+                min="0"
+                onSave={(value) => handleInlineUpdate(expense.id, 'amount', value)}
+                inputClassName="text-right"
+              />
+            </div>
+          );
+        },
       },
       {
         accessorKey: 'paid_by',
         header: createSortableHeader('Paid By'),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <EditableCell
+              value={expense.paid_by}
+              type="select"
+              options={paidBySelectOptions}
+              onSave={(value) => handleInlineUpdate(expense.id, 'paid_by', value)}
+            />
+          );
+        },
       },
       {
         id: 'actions',
@@ -316,7 +527,8 @@ export function Expenses() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => handleOpenDialog(row.original)}
+              onClick={() => handleEditDialog(row.original)}
+              title="Edit all fields"
             >
               <Pencil className="h-4 w-4" />
             </Button>
@@ -334,7 +546,7 @@ export function Expenses() {
         enableHiding: false,
       },
     ],
-    [deleteExpense.isPending]
+    [handleInlineUpdate, deleteExpense.isPending]
   );
 
   // Footer content for totals
@@ -729,6 +941,28 @@ export function Expenses() {
           />
         </CardContent>
       </Card>
+
+      {/* Full Edit Dialog */}
+      {editDialogExpense && (
+        <EditDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          title="Edit Expense"
+          fields={editDialogFields}
+          schema={editExpenseSchema}
+          defaultValues={{
+            description: editDialogExpense.description,
+            amount: editDialogExpense.amount,
+            date: editDialogExpense.date,
+            paid_by: editDialogExpense.paid_by,
+            category: editDialogExpense.category,
+            is_recurring: editDialogExpense.is_recurring,
+            notes: editDialogExpense.notes || '',
+          }}
+          onSubmit={handleEditDialogSubmit}
+          isLoading={updateExpense.isPending}
+        />
+      )}
     </div>
   );
 }
