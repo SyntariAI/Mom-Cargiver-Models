@@ -8,6 +8,12 @@ import {
   useCaregivers,
 } from '@/hooks/use-api';
 import {
+  useMonthlyTrend,
+  useCaregiverBreakdown,
+  useExpenseCategories,
+  useAllTimeSummary,
+} from '@/hooks/use-analytics';
+import {
   Card,
   CardContent,
   CardDescription,
@@ -23,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { LineChart, PieChart, BarChart } from '@/components/charts';
 
 function formatCurrency(amount: string | number): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -40,6 +47,40 @@ function formatDate(dateString: string): string {
   });
 }
 
+function formatHours(hours: string | number): string {
+  const num = typeof hours === 'string' ? parseFloat(hours) : hours;
+  return `${num.toFixed(1)} hrs`;
+}
+
+// Trend indicator component
+function TrendIndicator({ current, previous, label }: { current: number; previous: number; label: string }) {
+  if (previous === 0) return null;
+
+  const change = ((current - previous) / previous) * 100;
+  const isPositive = change >= 0;
+
+  return (
+    <div className="flex items-center gap-1 text-xs">
+      <span className={isPositive ? 'text-red-500' : 'text-green-500'}>
+        {isPositive ? '+' : ''}{change.toFixed(1)}%
+      </span>
+      <span className="text-muted-foreground">vs {label}</span>
+    </div>
+  );
+}
+
+// Loading skeleton for charts
+function ChartSkeleton({ height = 300 }: { height?: number }) {
+  return (
+    <div
+      className="flex items-center justify-center bg-muted/10 rounded-lg animate-pulse"
+      style={{ height }}
+    >
+      <p className="text-muted-foreground">Loading chart...</p>
+    </div>
+  );
+}
+
 export function Dashboard() {
   const { data: currentPeriod, isLoading: periodLoading, error: periodError } = useCurrentPeriod();
   const periodId = currentPeriod?.id;
@@ -49,6 +90,12 @@ export function Dashboard() {
   const { data: allExpenses, isLoading: expensesLoading } = useExpenses(periodId);
   const { data: caregivers } = useCaregivers();
   const markSettled = useMarkSettled();
+
+  // Analytics hooks
+  const { data: monthlyTrend, isLoading: trendLoading } = useMonthlyTrend(12);
+  const { data: caregiverBreakdown, isLoading: breakdownLoading } = useCaregiverBreakdown(periodId);
+  const { data: expenseCategories, isLoading: categoriesLoading } = useExpenseCategories(periodId);
+  const { data: allTimeSummary, isLoading: summaryLoading } = useAllTimeSummary();
 
   // Create caregiver lookup map
   const caregiverMap = new Map(caregivers?.map((c) => [c.id, c.name]) ?? []);
@@ -64,6 +111,32 @@ export function Dashboard() {
   // Get recent entries (last 5)
   const recentTimeEntries = timeEntries?.slice(-5).reverse() ?? [];
   const recentExpenses = allExpenses?.slice(-5).reverse() ?? [];
+
+  // Prepare chart data
+  const monthlyTrendData = monthlyTrend?.data.map((item) => ({
+    month: `${item.month} ${item.year}`,
+    caregiver_cost: parseFloat(item.total_caregiver_cost),
+    expenses: parseFloat(item.total_expenses),
+  })) ?? [];
+
+  const caregiverPieData = caregiverBreakdown?.data.map((item) => ({
+    name: item.caregiver_name,
+    value: parseFloat(item.total_hours),
+  })) ?? [];
+
+  const expenseCategoryData = expenseCategories?.data.map((item) => ({
+    category: item.category,
+    amount: parseFloat(item.total_amount),
+  })) ?? [];
+
+  const contributionsData = [
+    { name: 'Adi', amount: adiExpenses },
+    { name: 'Rafi', amount: rafiExpenses },
+  ];
+
+  // Calculate trend comparison (current period vs previous month)
+  const previousMonthData = monthlyTrend?.data[monthlyTrend.data.length - 2];
+  const previousCaregiverCost = previousMonthData ? parseFloat(previousMonthData.total_caregiver_cost) : 0;
 
   const handleMarkSettled = () => {
     if (periodId) {
@@ -163,7 +236,7 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Quick Stats Cards */}
+      {/* Quick Stats Cards - Current Period */}
       {currentPeriod && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
@@ -180,6 +253,13 @@ export function Dashboard() {
               <CardTitle className="text-2xl">
                 {entriesLoading ? 'Loading...' : formatCurrency(totalCaregiverCost)}
               </CardTitle>
+              {!entriesLoading && previousCaregiverCost > 0 && (
+                <TrendIndicator
+                  current={totalCaregiverCost}
+                  previous={previousCaregiverCost}
+                  label="last period"
+                />
+              )}
             </CardHeader>
           </Card>
           <Card>
@@ -200,6 +280,213 @@ export function Dashboard() {
           </Card>
         </div>
       )}
+
+      {/* All-Time Summary Stats */}
+      <Card>
+        <CardHeader>
+          <CardTitle>All-Time Summary</CardTitle>
+          <CardDescription>
+            {allTimeSummary?.first_period_date && allTimeSummary?.last_period_date
+              ? `From ${formatDate(allTimeSummary.first_period_date)} to ${formatDate(allTimeSummary.last_period_date)}`
+              : 'Lifetime statistics'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {summaryLoading ? (
+            <p className="text-muted-foreground">Loading...</p>
+          ) : allTimeSummary ? (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Total Hours</p>
+                <p className="text-2xl font-bold">{formatHours(allTimeSummary.total_hours)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Total Cost</p>
+                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.total_cost)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Avg Monthly Cost</p>
+                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.average_monthly_cost)}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Pay Periods</p>
+                <p className="text-2xl font-bold">{allTimeSummary.total_periods}</p>
+                <p className="text-xs text-muted-foreground">
+                  {allTimeSummary.active_caregivers} active / {allTimeSummary.total_caregivers} total caregivers
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-muted-foreground">No data available</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Charts Section - 2 columns on desktop, 1 on mobile */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Monthly Spending Trend - Line Chart */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Monthly Spending Trend</CardTitle>
+            <CardDescription>Caregiver costs and other expenses over the last 12 months</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {trendLoading ? (
+              <ChartSkeleton height={350} />
+            ) : monthlyTrendData.length > 0 ? (
+              <LineChart
+                data={monthlyTrendData}
+                xAxisDataKey="month"
+                height={350}
+                lines={[
+                  { dataKey: 'caregiver_cost', name: 'Caregiver Costs', color: 'hsl(var(--chart-1))' },
+                  { dataKey: 'expenses', name: 'Other Expenses', color: 'hsl(var(--chart-2))' },
+                ]}
+                formatTooltip={(value) => formatCurrency(value)}
+                formatYAxis={(value) => `$${(value / 1000).toFixed(0)}k`}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[350px] text-muted-foreground">
+                No trend data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Caregiver Hours Breakdown - Pie Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Caregiver Hours Breakdown</CardTitle>
+            <CardDescription>
+              Hours distribution {currentPeriod ? 'for current period' : 'all-time'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {breakdownLoading ? (
+              <ChartSkeleton height={300} />
+            ) : caregiverPieData.length > 0 ? (
+              <PieChart
+                data={caregiverPieData}
+                height={300}
+                innerRadius={40}
+                outerRadius={100}
+                formatTooltip={(value) => `${value.toFixed(1)} hours`}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No caregiver data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Expense Categories - Horizontal Bar Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Expense Categories</CardTitle>
+            <CardDescription>
+              Spending by category {currentPeriod ? 'for current period' : 'all-time'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {categoriesLoading ? (
+              <ChartSkeleton height={300} />
+            ) : expenseCategoryData.length > 0 ? (
+              <BarChart
+                data={expenseCategoryData}
+                xAxisDataKey="category"
+                layout="vertical"
+                height={300}
+                bars={[
+                  { dataKey: 'amount', name: 'Amount', color: 'hsl(var(--chart-3))' },
+                ]}
+                showLegend={false}
+                formatTooltip={(value) => formatCurrency(value)}
+                formatYAxis={(value) => `$${value.toLocaleString()}`}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground">
+                No expense data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Adi vs Rafi Contributions - Stacked Bar */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Adi vs Rafi Contributions</CardTitle>
+            <CardDescription>Total expenses paid by each person this period</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {expensesLoading ? (
+              <ChartSkeleton height={200} />
+            ) : (
+              <BarChart
+                data={contributionsData}
+                xAxisDataKey="name"
+                height={200}
+                bars={[
+                  { dataKey: 'amount', name: 'Amount Paid', color: 'hsl(var(--chart-4))' },
+                ]}
+                showLegend={false}
+                formatTooltip={(value) => formatCurrency(value)}
+                formatYAxis={(value) => `$${value.toLocaleString()}`}
+              />
+            )}
+            {!expensesLoading && (
+              <div className="mt-4 flex justify-between text-sm">
+                <div>
+                  <span className="text-muted-foreground">Adi: </span>
+                  <span className="font-medium">{formatCurrency(adiExpenses)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Rafi: </span>
+                  <span className="font-medium">{formatCurrency(rafiExpenses)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Total: </span>
+                  <span className="font-medium">{formatCurrency(adiExpenses + rafiExpenses)}</span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Caregiver Cost Distribution - Additional stacked bar showing cost breakdown */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Caregiver Cost Distribution</CardTitle>
+            <CardDescription>
+              Payment breakdown by caregiver {currentPeriod ? 'for current period' : 'all-time'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {breakdownLoading ? (
+              <ChartSkeleton height={200} />
+            ) : caregiverBreakdown?.data && caregiverBreakdown.data.length > 0 ? (
+              <BarChart
+                data={caregiverBreakdown.data.map((item) => ({
+                  name: item.caregiver_name,
+                  cost: parseFloat(item.total_pay),
+                }))}
+                xAxisDataKey="name"
+                height={200}
+                bars={[
+                  { dataKey: 'cost', name: 'Total Pay', color: 'hsl(var(--chart-5))' },
+                ]}
+                showLegend={false}
+                formatTooltip={(value) => formatCurrency(value)}
+                formatYAxis={(value) => `$${value.toLocaleString()}`}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[200px] text-muted-foreground">
+                No caregiver cost data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Recent Activity */}
       {currentPeriod && (
