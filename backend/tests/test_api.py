@@ -30,3 +30,62 @@ def test_health_check(client):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "healthy"}
+
+
+def test_create_caregiver(client):
+    response = client.post(
+        "/api/caregivers",
+        json={"name": "Julia", "default_hourly_rate": "15.00"}
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == "Julia"
+    assert data["default_hourly_rate"] == "15.00"
+    assert data["is_active"] is True
+    assert "id" in data
+
+
+def test_list_caregivers(client):
+    client.post("/api/caregivers", json={"name": "Diana"})
+    client.post("/api/caregivers", json={"name": "Edwina"})
+
+    response = client.get("/api/caregivers")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+
+
+def test_get_caregiver(client):
+    create_response = client.post("/api/caregivers", json={"name": "Margaret"})
+    caregiver_id = create_response.json()["id"]
+
+    response = client.get(f"/api/caregivers/{caregiver_id}")
+    assert response.status_code == 200
+    assert response.json()["name"] == "Margaret"
+
+
+def test_update_caregiver(client):
+    create_response = client.post(
+        "/api/caregivers",
+        json={"name": "Jemma", "default_hourly_rate": "15.00"}
+    )
+    caregiver_id = create_response.json()["id"]
+
+    response = client.put(
+        f"/api/caregivers/{caregiver_id}",
+        json={"default_hourly_rate": "16.00"}
+    )
+    assert response.status_code == 200
+    assert response.json()["default_hourly_rate"] == "16.00"
+
+
+def test_deactivate_caregiver(client):
+    create_response = client.post("/api/caregivers", json={"name": "Geraldine"})
+    caregiver_id = create_response.json()["id"]
+
+    response = client.delete(f"/api/caregivers/{caregiver_id}")
+    assert response.status_code == 200
+
+    # Verify deactivated
+    get_response = client.get(f"/api/caregivers/{caregiver_id}")
+    assert get_response.json()["is_active"] is False
