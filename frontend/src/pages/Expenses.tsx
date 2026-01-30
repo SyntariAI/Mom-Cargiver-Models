@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { format } from 'date-fns';
+import { format, isWithinInterval, parseISO } from 'date-fns';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -33,14 +34,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable, createSortableHeader } from '@/components/ui/data-table';
+import { DateRangePicker, type DateRangeValue } from '@/components/filters/DateRangePicker';
+import { MultiSelect, type MultiSelectOption } from '@/components/filters/MultiSelect';
 
 import {
   useExpenses,
@@ -78,10 +74,30 @@ const expenseFormSchema = z.object({
 
 type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 
+// Helper functions
+const formatCurrency = (amount: string | number) => {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(num);
+};
+
+const formatDate = (dateStr: string) => {
+  return format(new Date(dateStr), 'MMM d, yyyy');
+};
+
 export function Expenses() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>(undefined);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+
+  // Filter states
+  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
+  const [selectedPaidBy, setSelectedPaidBy] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [minAmount, setMinAmount] = useState<string>('');
+  const [maxAmount, setMaxAmount] = useState<string>('');
 
   const { data: payPeriods, isLoading: periodsLoading } = usePayPeriods();
   const { data: expenses, isLoading: expensesLoading } = useExpenses(selectedPeriodId);
@@ -104,19 +120,76 @@ export function Expenses() {
     },
   });
 
-  // Sort expenses by date descending
-  const sortedExpenses = useMemo(() => {
-    if (!expenses) return [];
-    return [...expenses].sort((a, b) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  }, [expenses]);
+  // Filter options
+  const paidByOptions: MultiSelectOption[] = [
+    { value: 'Adi', label: 'Adi' },
+    { value: 'Rafi', label: 'Rafi' },
+  ];
 
-  // Calculate total from expenses
-  const total = useMemo(() => {
-    if (!expenses) return 0;
-    return expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-  }, [expenses]);
+  const categoryOptions: MultiSelectOption[] = EXPENSE_CATEGORIES.map((cat) => ({
+    value: cat,
+    label: cat,
+  }));
+
+  // Filter and sort expenses
+  const filteredExpenses = useMemo(() => {
+    if (!expenses) return [];
+    let result = [...expenses];
+
+    // Filter by date range
+    if (dateRange.from || dateRange.to) {
+      result = result.filter((expense) => {
+        const expenseDate = parseISO(expense.date);
+        if (dateRange.from && dateRange.to) {
+          return isWithinInterval(expenseDate, { start: dateRange.from, end: dateRange.to });
+        }
+        if (dateRange.from) {
+          return expenseDate >= dateRange.from;
+        }
+        if (dateRange.to) {
+          return expenseDate <= dateRange.to;
+        }
+        return true;
+      });
+    }
+
+    // Filter by paid by
+    if (selectedPaidBy.length > 0) {
+      result = result.filter((expense) => selectedPaidBy.includes(expense.paid_by));
+    }
+
+    // Filter by category
+    if (selectedCategories.length > 0) {
+      result = result.filter((expense) => selectedCategories.includes(expense.category));
+    }
+
+    // Filter by amount range
+    if (minAmount !== '') {
+      const min = parseFloat(minAmount);
+      result = result.filter((expense) => parseFloat(expense.amount) >= min);
+    }
+    if (maxAmount !== '') {
+      const max = parseFloat(maxAmount);
+      result = result.filter((expense) => parseFloat(expense.amount) <= max);
+    }
+
+    return result;
+  }, [expenses, dateRange, selectedPaidBy, selectedCategories, minAmount, maxAmount]);
+
+  // Calculate totals for filtered expenses
+  const filteredTotals = useMemo(() => {
+    return filteredExpenses.reduce(
+      (acc, expense) => {
+        const amount = parseFloat(expense.amount);
+        return {
+          total: acc.total + amount,
+          adi: acc.adi + (expense.paid_by === 'Adi' ? amount : 0),
+          rafi: acc.rafi + (expense.paid_by === 'Rafi' ? amount : 0),
+        };
+      },
+      { total: 0, adi: 0, rafi: 0 }
+    );
+  }, [filteredExpenses]);
 
   const handleOpenDialog = (expense?: Expense) => {
     if (expense) {
@@ -177,17 +250,113 @@ export function Expenses() {
     }
   };
 
-  const formatCurrency = (amount: string | number) => {
-    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(num);
+  const clearFilters = () => {
+    setDateRange({ from: undefined, to: undefined });
+    setSelectedPaidBy([]);
+    setSelectedCategories([]);
+    setMinAmount('');
+    setMaxAmount('');
   };
 
-  const formatDate = (dateStr: string) => {
-    return format(new Date(dateStr), 'MMM d, yyyy');
-  };
+  const hasActiveFilters =
+    dateRange.from !== undefined ||
+    dateRange.to !== undefined ||
+    selectedPaidBy.length > 0 ||
+    selectedCategories.length > 0 ||
+    minAmount !== '' ||
+    maxAmount !== '';
+
+  // Define columns for DataTable
+  const columns: ColumnDef<Expense>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'date',
+        header: createSortableHeader('Date'),
+        cell: ({ row }) => formatDate(row.getValue('date')),
+      },
+      {
+        accessorKey: 'description',
+        header: createSortableHeader('Description'),
+        cell: ({ row }) => {
+          const expense = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              {expense.description}
+              {expense.is_recurring && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                  Recurring
+                </span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'category',
+        header: createSortableHeader('Category'),
+      },
+      {
+        accessorKey: 'amount',
+        header: createSortableHeader('Amount'),
+        cell: ({ row }) => (
+          <div className="text-right font-medium">
+            {formatCurrency(row.getValue('amount'))}
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'paid_by',
+        header: createSortableHeader('Paid By'),
+      },
+      {
+        id: 'actions',
+        header: () => <div className="text-right">Actions</div>,
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleOpenDialog(row.original)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleDelete(row.original.id)}
+              disabled={deleteExpense.isPending}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ],
+    [deleteExpense.isPending]
+  );
+
+  // Footer content for totals
+  const footerContent = (
+    <div className="flex items-center justify-between text-sm">
+      <span className="font-medium">Total ({filteredExpenses.length} expenses)</span>
+      <div className="flex items-center gap-8">
+        <div>
+          <span className="text-muted-foreground">Adi:</span>{' '}
+          <span className="font-medium">{formatCurrency(filteredTotals.adi)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Rafi:</span>{' '}
+          <span className="font-medium">{formatCurrency(filteredTotals.rafi)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Total:</span>{' '}
+          <span className="font-medium">{formatCurrency(filteredTotals.total)}</span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -406,7 +575,7 @@ export function Expenses() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(total)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(filteredTotals.total)}</div>
           </CardContent>
         </Card>
 
@@ -460,77 +629,104 @@ export function Expenses() {
         </Card>
       </div>
 
+      {/* Filter Bar */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Filters</CardTitle>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Date Range */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Date Range
+              </label>
+              <DateRangePicker
+                value={dateRange}
+                onChange={setDateRange}
+                placeholder="Select date range"
+              />
+            </div>
+
+            {/* Paid By Multi-select */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Paid By
+              </label>
+              <MultiSelect
+                options={paidByOptions}
+                value={selectedPaidBy}
+                onChange={setSelectedPaidBy}
+                placeholder="All"
+                className="w-[140px]"
+              />
+            </div>
+
+            {/* Category Multi-select */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Category
+              </label>
+              <MultiSelect
+                options={categoryOptions}
+                value={selectedCategories}
+                onChange={setSelectedCategories}
+                placeholder="All categories"
+              />
+            </div>
+
+            {/* Amount Range */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Amount Range
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={minAmount}
+                  onChange={(e) => setMinAmount(e.target.value)}
+                  className="w-24"
+                  min="0"
+                  step="0.01"
+                />
+                <span className="text-muted-foreground">to</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={maxAmount}
+                  onChange={(e) => setMaxAmount(e.target.value)}
+                  className="w-24"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Expenses Table */}
       <Card>
         <CardHeader>
           <CardTitle>Expenses List</CardTitle>
         </CardHeader>
         <CardContent>
-          {periodsLoading || expensesLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <span className="text-muted-foreground">Loading expenses...</span>
-            </div>
-          ) : sortedExpenses.length === 0 ? (
-            <div className="flex items-center justify-center py-8">
-              <span className="text-muted-foreground">
-                No expenses found. Add your first expense to get started.
-              </span>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Paid By</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedExpenses.map((expense) => (
-                  <TableRow key={expense.id}>
-                    <TableCell>{formatDate(expense.date)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {expense.description}
-                        {expense.is_recurring && (
-                          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
-                            Recurring
-                          </span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{expense.category}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(expense.amount)}
-                    </TableCell>
-                    <TableCell>{expense.paid_by}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleOpenDialog(expense)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(expense.id)}
-                          disabled={deleteExpense.isPending}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          <DataTable
+            columns={columns}
+            data={filteredExpenses}
+            isLoading={periodsLoading || expensesLoading}
+            emptyMessage="No expenses found. Add your first expense to get started."
+            enableRowSelection={true}
+            footerContent={filteredExpenses.length > 0 ? footerContent : undefined}
+          />
         </CardContent>
       </Card>
     </div>

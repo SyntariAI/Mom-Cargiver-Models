@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { format } from 'date-fns';
+import { format, isWithinInterval, parseISO } from 'date-fns';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import type { ColumnDef } from '@tanstack/react-table';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,15 +33,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { DataTable, createSortableHeader } from '@/components/ui/data-table';
+import { DateRangePicker, type DateRangeValue } from '@/components/filters/DateRangePicker';
+import { MultiSelect, type MultiSelectOption } from '@/components/filters/MultiSelect';
 
 import {
   useTimeEntries,
@@ -287,6 +282,28 @@ function TimeEntryDialog({ entry, caregivers, periodId, onClose }: TimeEntryDial
   );
 }
 
+// Helper functions
+const formatTime = (time: string | null) => {
+  if (!time) return '-';
+  const [hours, minutes] = time.split(':');
+  const hour = parseInt(hours, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minutes} ${ampm}`;
+};
+
+const formatCurrency = (amount: string | number) => {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(num);
+};
+
+const formatDate = (dateStr: string) => {
+  return format(new Date(dateStr), 'MMM d, yyyy');
+};
+
 export function TimeEntries() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<number | undefined>();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -294,28 +311,76 @@ export function TimeEntries() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState<TimeEntry | undefined>();
 
+  // Filter states
+  const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
+  const [selectedCaregivers, setSelectedCaregivers] = useState<string[]>([]);
+  const [minHours, setMinHours] = useState<string>('');
+  const [maxHours, setMaxHours] = useState<string>('');
+
   const { data: periods = [] } = usePayPeriods();
   const { data: caregivers = [] } = useCaregivers();
   const { data: entries = [], isLoading } = useTimeEntries(selectedPeriodId);
   const deleteTimeEntry = useDeleteTimeEntry();
 
-  // Sort entries by date descending
-  const sortedEntries = useMemo(() => {
-    return [...entries].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  }, [entries]);
+  // Caregiver options for multi-select
+  const caregiverOptions: MultiSelectOption[] = useMemo(() => {
+    return caregivers.map((c) => ({
+      value: c.id.toString(),
+      label: c.name,
+    }));
+  }, [caregivers]);
 
-  // Calculate totals
+  // Filter and sort entries
+  const filteredEntries = useMemo(() => {
+    let result = [...entries];
+
+    // Filter by date range
+    if (dateRange.from || dateRange.to) {
+      result = result.filter((entry) => {
+        const entryDate = parseISO(entry.date);
+        if (dateRange.from && dateRange.to) {
+          return isWithinInterval(entryDate, { start: dateRange.from, end: dateRange.to });
+        }
+        if (dateRange.from) {
+          return entryDate >= dateRange.from;
+        }
+        if (dateRange.to) {
+          return entryDate <= dateRange.to;
+        }
+        return true;
+      });
+    }
+
+    // Filter by caregiver
+    if (selectedCaregivers.length > 0) {
+      result = result.filter((entry) =>
+        selectedCaregivers.includes(entry.caregiver_id.toString())
+      );
+    }
+
+    // Filter by hours range
+    if (minHours !== '') {
+      const min = parseFloat(minHours);
+      result = result.filter((entry) => parseFloat(entry.hours) >= min);
+    }
+    if (maxHours !== '') {
+      const max = parseFloat(maxHours);
+      result = result.filter((entry) => parseFloat(entry.hours) <= max);
+    }
+
+    return result;
+  }, [entries, dateRange, selectedCaregivers, minHours, maxHours]);
+
+  // Calculate totals for filtered entries
   const totals = useMemo(() => {
-    return sortedEntries.reduce(
+    return filteredEntries.reduce(
       (acc, entry) => ({
         hours: acc.hours + parseFloat(entry.hours),
         pay: acc.pay + parseFloat(entry.total_pay),
       }),
       { hours: 0, pay: 0 }
     );
-  }, [sortedEntries]);
+  }, [filteredEntries]);
 
   const handleEdit = (entry: TimeEntry) => {
     setEditingEntry(entry);
@@ -344,26 +409,110 @@ export function TimeEntries() {
     setEditingEntry(undefined);
   };
 
-  const formatTime = (time: string | null) => {
-    if (!time) return '-';
-    // Time is in HH:MM:SS format, convert to HH:MM AM/PM
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours, 10);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const hour12 = hour % 12 || 12;
-    return `${hour12}:${minutes} ${ampm}`;
+  const clearFilters = () => {
+    setDateRange({ from: undefined, to: undefined });
+    setSelectedCaregivers([]);
+    setMinHours('');
+    setMaxHours('');
   };
 
-  const formatCurrency = (amount: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(parseFloat(amount));
-  };
+  const hasActiveFilters =
+    dateRange.from !== undefined ||
+    dateRange.to !== undefined ||
+    selectedCaregivers.length > 0 ||
+    minHours !== '' ||
+    maxHours !== '';
 
-  const formatDate = (dateStr: string) => {
-    return format(new Date(dateStr), 'MMM d, yyyy');
-  };
+  // Define columns for DataTable
+  const columns: ColumnDef<TimeEntry>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'date',
+        header: createSortableHeader('Date'),
+        cell: ({ row }) => formatDate(row.getValue('date')),
+      },
+      {
+        accessorKey: 'caregiver_name',
+        header: createSortableHeader('Caregiver'),
+        cell: ({ row }) => row.getValue('caregiver_name') || '-',
+      },
+      {
+        accessorKey: 'time_in',
+        header: 'Time In',
+        cell: ({ row }) => formatTime(row.getValue('time_in')),
+      },
+      {
+        accessorKey: 'time_out',
+        header: 'Time Out',
+        cell: ({ row }) => formatTime(row.getValue('time_out')),
+      },
+      {
+        accessorKey: 'hours',
+        header: createSortableHeader('Hours'),
+        cell: ({ row }) => (
+          <div className="text-right">{row.getValue('hours')}</div>
+        ),
+      },
+      {
+        accessorKey: 'hourly_rate',
+        header: createSortableHeader('Rate'),
+        cell: ({ row }) => (
+          <div className="text-right">{formatCurrency(row.getValue('hourly_rate'))}</div>
+        ),
+      },
+      {
+        accessorKey: 'total_pay',
+        header: createSortableHeader('Total Pay'),
+        cell: ({ row }) => (
+          <div className="text-right font-medium">
+            {formatCurrency(row.getValue('total_pay'))}
+          </div>
+        ),
+      },
+      {
+        id: 'actions',
+        header: () => <div className="text-right">Actions</div>,
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleEdit(row.original)}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleDeleteClick(row.original)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ],
+    []
+  );
+
+  // Footer content for totals
+  const footerContent = (
+    <div className="flex items-center justify-between text-sm">
+      <span className="font-medium">Total ({filteredEntries.length} entries)</span>
+      <div className="flex items-center gap-8">
+        <div>
+          <span className="text-muted-foreground">Hours:</span>{' '}
+          <span className="font-medium">{totals.hours.toFixed(2)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Pay:</span>{' '}
+          <span className="font-medium">{formatCurrency(totals.pay)}</span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -420,87 +569,90 @@ export function TimeEntries() {
         </div>
       </div>
 
+      {/* Filter Bar */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Filters</CardTitle>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Date Range */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Date Range
+              </label>
+              <DateRangePicker
+                value={dateRange}
+                onChange={setDateRange}
+                placeholder="Select date range"
+              />
+            </div>
+
+            {/* Caregiver Multi-select */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Caregiver
+              </label>
+              <MultiSelect
+                options={caregiverOptions}
+                value={selectedCaregivers}
+                onChange={setSelectedCaregivers}
+                placeholder="All caregivers"
+              />
+            </div>
+
+            {/* Hours Range */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-muted-foreground">
+                Hours Range
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  placeholder="Min"
+                  value={minHours}
+                  onChange={(e) => setMinHours(e.target.value)}
+                  className="w-20"
+                  min="0"
+                  step="0.25"
+                />
+                <span className="text-muted-foreground">to</span>
+                <Input
+                  type="number"
+                  placeholder="Max"
+                  value={maxHours}
+                  onChange={(e) => setMaxHours(e.target.value)}
+                  className="w-20"
+                  min="0"
+                  step="0.25"
+                />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Time Entries Table */}
       <Card>
         <CardHeader>
           <CardTitle>Entries</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="text-muted-foreground">Loading...</div>
-            </div>
-          ) : sortedEntries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <p>No time entries found.</p>
-              <p className="text-sm">Click "Add Entry" to create one.</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Caregiver</TableHead>
-                  <TableHead>Time In</TableHead>
-                  <TableHead>Time Out</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
-                  <TableHead className="text-right">Rate</TableHead>
-                  <TableHead className="text-right">Total Pay</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>{formatDate(entry.date)}</TableCell>
-                    <TableCell>{entry.caregiver_name || '-'}</TableCell>
-                    <TableCell>{formatTime(entry.time_in)}</TableCell>
-                    <TableCell>{formatTime(entry.time_out)}</TableCell>
-                    <TableCell className="text-right">{entry.hours}</TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(entry.hourly_rate)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(entry.total_pay)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(entry)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteClick(entry)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={4} className="font-medium">
-                    Total
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {totals.hours.toFixed(2)}
-                  </TableCell>
-                  <TableCell />
-                  <TableCell className="text-right font-medium">
-                    {formatCurrency(totals.pay.toString())}
-                  </TableCell>
-                  <TableCell />
-                </TableRow>
-              </TableFooter>
-            </Table>
-          )}
+          <DataTable
+            columns={columns}
+            data={filteredEntries}
+            isLoading={isLoading}
+            emptyMessage='No time entries found. Click "Add Entry" to create one.'
+            enableRowSelection={true}
+            footerContent={filteredEntries.length > 0 ? footerContent : undefined}
+          />
         </CardContent>
       </Card>
 
