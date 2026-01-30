@@ -8,13 +8,16 @@ import type {
   ExpenseSummary,
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// In production, use relative URLs (nginx proxies to backend)
+// In development, use localhost:8000
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Send HTTP Basic Auth credentials with requests
 });
 
 // Caregivers
