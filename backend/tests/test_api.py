@@ -252,3 +252,85 @@ def test_delete_time_entry(client):
 
     get_response = client.get(f"/api/time-entries/{entry['id']}")
     assert get_response.status_code == 404
+
+
+def test_create_expense(client):
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    response = client.post(
+        "/api/expenses",
+        json={
+            "pay_period_id": period["id"],
+            "date": "2026-01-15",
+            "description": "Walmart groceries",
+            "amount": "209.71",
+            "paid_by": "Rafi",
+            "category": "Groceries"
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["description"] == "Walmart groceries"
+    assert data["amount"] == "209.71"
+    assert data["paid_by"] == "Rafi"
+
+
+def test_list_expenses_by_period(client):
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    client.post("/api/expenses", json={
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "description": "Rent",
+        "amount": "800.00",
+        "paid_by": "Rafi",
+        "category": "Rent"
+    })
+    client.post("/api/expenses", json={
+        "pay_period_id": period["id"],
+        "date": "2026-01-16",
+        "description": "FPL",
+        "amount": "164.14",
+        "paid_by": "Rafi",
+        "category": "Utilities"
+    })
+
+    response = client.get(f"/api/expenses?period_id={period['id']}")
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_expense_summary(client):
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    client.post("/api/expenses", json={
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "description": "Rent",
+        "amount": "800.00",
+        "paid_by": "Rafi",
+        "category": "Rent"
+    })
+    client.post("/api/expenses", json={
+        "pay_period_id": period["id"],
+        "date": "2026-01-16",
+        "description": "Medical",
+        "amount": "85.00",
+        "paid_by": "Adi",
+        "category": "Medical"
+    })
+
+    response = client.get(f"/api/expenses/summary?period_id={period['id']}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["rafi_total"] == "800.00"
+    assert data["adi_total"] == "85.00"
