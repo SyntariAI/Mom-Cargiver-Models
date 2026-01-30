@@ -38,7 +38,14 @@ print_error() {
 check_dependencies() {
     local missing=()
 
-    if ! command -v python3 &> /dev/null; then
+    # Prefer Python 3.13, fall back to python3
+    if [ -x "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" ]; then
+        PYTHON="/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+    elif command -v python3.13 &> /dev/null; then
+        PYTHON="python3.13"
+    elif command -v python3 &> /dev/null; then
+        PYTHON="python3"
+    else
         missing+=("python3")
     fi
 
@@ -55,6 +62,8 @@ check_dependencies() {
         echo "Please install the missing dependencies and try again."
         exit 1
     fi
+
+    print_status "Using Python: $PYTHON"
 }
 
 check_docker() {
@@ -80,10 +89,15 @@ start_dev() {
     mkdir -p "$SCRIPT_DIR/data"
 
     # Install backend dependencies if needed
-    if [ ! -d "$SCRIPT_DIR/backend/venv" ]; then
+    if [ ! -d "$SCRIPT_DIR/backend/venv" ] || [ ! -f "$SCRIPT_DIR/backend/venv/bin/activate" ]; then
         print_status "Creating Python virtual environment..."
         cd "$SCRIPT_DIR/backend"
-        python3 -m venv venv
+        rm -rf venv
+        $PYTHON -m venv venv
+        if [ ! -f "venv/bin/activate" ]; then
+            print_error "Failed to create virtual environment"
+            exit 1
+        fi
     fi
 
     # Activate venv and install dependencies
