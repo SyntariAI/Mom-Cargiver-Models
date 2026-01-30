@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import Base, engine, import_models
-from app.api.routes import caregivers, pay_periods
+from app.api.routes import caregivers, pay_periods, time_entries
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app.add_middleware(
 # Register routers
 app.include_router(caregivers.router)
 app.include_router(pay_periods.router)
+app.include_router(time_entries.router)
 
 
 @app.get("/health")

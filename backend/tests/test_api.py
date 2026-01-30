@@ -2,15 +2,25 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.database import Base, get_db, import_models
+
+# Import models BEFORE importing app to ensure they're registered with Base
+import_models()
 
 from app.main import app
-from app.core.database import Base, get_db
 
 
 @pytest.fixture
 def client():
-    # Use in-memory database for tests
-    engine = create_engine("sqlite:///:memory:")
+    # Use in-memory database for tests with StaticPool to share connection
+    # SQLite in-memory databases are connection-scoped, so we need StaticPool
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool
+    )
     Base.metadata.create_all(engine)
     TestingSessionLocal = sessionmaker(bind=engine)
 
@@ -141,3 +151,104 @@ def test_only_one_open_period(client):
     )
     assert response.status_code == 400
     assert "already an open period" in response.json()["detail"].lower()
+
+
+def test_create_time_entry(client):
+    # Setup: create caregiver and period
+    cg_response = client.post("/api/caregivers", json={"name": "Julia"})
+    caregiver_id = cg_response.json()["id"]
+
+    period_response = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+    period_id = period_response.json()["id"]
+
+    # Create time entry
+    response = client.post(
+        "/api/time-entries",
+        json={
+            "caregiver_id": caregiver_id,
+            "pay_period_id": period_id,
+            "date": "2026-01-15",
+            "hours": "12.00",
+            "hourly_rate": "15.00"
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["hours"] == "12.00"
+    assert data["total_pay"] == "180.00"
+
+
+def test_list_time_entries_by_period(client):
+    cg = client.post("/api/caregivers", json={"name": "Diana"}).json()
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    client.post("/api/time-entries", json={
+        "caregiver_id": cg["id"],
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "hours": "8.00",
+        "hourly_rate": "15.00"
+    })
+    client.post("/api/time-entries", json={
+        "caregiver_id": cg["id"],
+        "pay_period_id": period["id"],
+        "date": "2026-01-16",
+        "hours": "10.00",
+        "hourly_rate": "15.00"
+    })
+
+    response = client.get(f"/api/time-entries?period_id={period['id']}")
+    assert response.status_code == 200
+    assert len(response.json()) == 2
+
+
+def test_update_time_entry(client):
+    cg = client.post("/api/caregivers", json={"name": "Edwina"}).json()
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    entry = client.post("/api/time-entries", json={
+        "caregiver_id": cg["id"],
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "hours": "8.00",
+        "hourly_rate": "15.00"
+    }).json()
+
+    response = client.put(
+        f"/api/time-entries/{entry['id']}",
+        json={"hours": "10.00"}
+    )
+    assert response.status_code == 200
+    assert response.json()["hours"] == "10.00"
+    assert response.json()["total_pay"] == "150.00"
+
+
+def test_delete_time_entry(client):
+    cg = client.post("/api/caregivers", json={"name": "Margaret"}).json()
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    entry = client.post("/api/time-entries", json={
+        "caregiver_id": cg["id"],
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "hours": "8.00",
+        "hourly_rate": "15.00"
+    }).json()
+
+    response = client.delete(f"/api/time-entries/{entry['id']}")
+    assert response.status_code == 204
+
+    get_response = client.get(f"/api/time-entries/{entry['id']}")
+    assert get_response.status_code == 404
