@@ -6,6 +6,11 @@ import type {
   Expense,
   Settlement,
   ExpenseSummary,
+  MonthlyTrendResponse,
+  CaregiverBreakdownResponse,
+  ExpenseCategoriesResponse,
+  AllTimeSummary,
+  PeriodComparisonResponse,
 } from '../types';
 
 // In production, use relative URLs (nginx proxies to backend)
@@ -85,6 +90,36 @@ export const settlements = {
     api
       .post<Settlement>(`/api/settlements/${periodId}/mark-settled`, {
         payment_method: paymentMethod,
+      })
+      .then((r) => r.data),
+};
+
+// Analytics
+export const analytics = {
+  monthlyTrend: (months?: number) =>
+    api
+      .get<MonthlyTrendResponse>('/api/analytics/monthly-trend', {
+        params: months ? { months } : undefined,
+      })
+      .then((r) => r.data),
+  caregiverBreakdown: (periodId?: number) =>
+    api
+      .get<CaregiverBreakdownResponse>('/api/analytics/caregiver-breakdown', {
+        params: periodId ? { period_id: periodId } : undefined,
+      })
+      .then((r) => r.data),
+  expenseCategories: (periodId?: number) =>
+    api
+      .get<ExpenseCategoriesResponse>('/api/analytics/expense-categories', {
+        params: periodId ? { period_id: periodId } : undefined,
+      })
+      .then((r) => r.data),
+  allTimeSummary: () =>
+    api.get<AllTimeSummary>('/api/analytics/all-time-summary').then((r) => r.data),
+  periodComparison: (ids: number[]) =>
+    api
+      .get<PeriodComparisonResponse>('/api/analytics/period-comparison', {
+        params: { ids: ids.join(',') },
       })
       .then((r) => r.data),
 };

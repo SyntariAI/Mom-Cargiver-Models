@@ -76,3 +76,100 @@ export interface ExpenseSummary {
   rafi_total: string;
   by_category: Record<string, string>;
 }
+
+// ============================================================================
+// Analytics Types
+// ============================================================================
+
+export interface MonthlyTrendDataPoint {
+  month: string;
+  year: number;
+  total_hours: string;
+  total_caregiver_cost: string;
+  total_expenses: string;
+  total_cost: string;
+}
+
+export interface MonthlyTrendResponse {
+  data: MonthlyTrendDataPoint[];
+  period: {
+    start_date: string;
+    end_date: string;
+  };
+}
+
+export interface CaregiverBreakdownItem {
+  caregiver_id: number;
+  caregiver_name: string;
+  total_hours: string;
+  total_pay: string;
+  percentage_of_hours: number;
+  percentage_of_cost: number;
+  entry_count: number;
+}
+
+export interface CaregiverBreakdownResponse {
+  data: CaregiverBreakdownItem[];
+  totals: {
+    total_hours: string;
+    total_cost: string;
+  };
+  period_id?: number;
+}
+
+export interface ExpenseCategoryItem {
+  category: ExpenseCategory;
+  total_amount: string;
+  percentage: number;
+  count: number;
+}
+
+export interface ExpenseCategoriesResponse {
+  data: ExpenseCategoryItem[];
+  totals: {
+    total_amount: string;
+    total_count: number;
+  };
+  period_id?: number;
+}
+
+export interface AllTimeSummary {
+  total_periods: number;
+  total_hours: string;
+  total_caregiver_cost: string;
+  total_expenses: string;
+  total_cost: string;
+  average_monthly_cost: string;
+  first_period_date: string | null;
+  last_period_date: string | null;
+  active_caregivers: number;
+  total_caregivers: number;
+}
+
+export interface PeriodComparisonItem {
+  period_id: number;
+  start_date: string;
+  end_date: string;
+  status: 'open' | 'closed';
+  total_hours: string;
+  total_caregiver_cost: string;
+  total_expenses: string;
+  total_cost: string;
+  caregiver_breakdown: {
+    caregiver_id: number;
+    caregiver_name: string;
+    hours: string;
+    cost: string;
+  }[];
+  expense_breakdown: Record<ExpenseCategory, string>;
+}
+
+export interface PeriodComparisonResponse {
+  periods: PeriodComparisonItem[];
+  averages: {
+    avg_hours: string;
+    avg_caregiver_cost: string;
+    avg_expenses: string;
+    avg_total_cost: string;
+  };
+}
