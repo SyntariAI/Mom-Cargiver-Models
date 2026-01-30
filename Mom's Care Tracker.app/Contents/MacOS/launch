@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Mom's Care Tracker - macOS App Launcher
+PROJECT_DIR="/Users/rafimenachem/Documents/GitHub/Mom-Cargiver-Models"
+
+cd "$PROJECT_DIR"
+
+# Check if already running
+if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+    # Already running, just open browser
+    open "http://localhost:5173"
+    exit 0
+fi
+
+# Start services in Terminal so user can see logs
+osascript <<EOF
+tell application "Terminal"
+    activate
+    do script "cd '$PROJECT_DIR' && ./start.sh dev"
+end tell
+EOF
+
+# Wait for services to start
+echo "Starting Mom's Care Tracker..."
+for i in {1..30}; do
+    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+
+# Wait a bit more for frontend
+sleep 3
+
+# Open browser
+open "http://localhost:5173"
