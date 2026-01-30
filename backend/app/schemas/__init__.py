@@ -14,6 +14,10 @@ from app.schemas.expense import (
 from app.schemas.settlement import (
     SettlementResponse, MarkSettledRequest
 )
+from app.schemas.analytics import (
+    MonthlyTrend, CaregiverBreakdown, ExpenseCategoryBreakdown,
+    AllTimeSummary, PeriodComparisonItem
+)
 
 __all__ = [
     "CaregiverBase", "CaregiverCreate", "CaregiverUpdate", "CaregiverResponse",
@@ -22,4 +26,6 @@ __all__ = [
     "TimeEntryBulkCreate",
     "ExpenseBase", "ExpenseCreate", "ExpenseUpdate", "ExpenseResponse", "ExpenseSummary",
     "SettlementResponse", "MarkSettledRequest",
+    "MonthlyTrend", "CaregiverBreakdown", "ExpenseCategoryBreakdown",
+    "AllTimeSummary", "PeriodComparisonItem",
 ]
