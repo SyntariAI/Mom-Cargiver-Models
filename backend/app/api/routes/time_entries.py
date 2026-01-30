@@ -1,5 +1,6 @@
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -9,6 +10,23 @@ from app.models.pay_period import PayPeriod
 from app.schemas.time_entry import (
     TimeEntryCreate, TimeEntryUpdate, TimeEntryResponse, TimeEntryBulkCreate
 )
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted_count: int
+
+
+class BulkUpdateRequest(BaseModel):
+    ids: list[int]
+    updates: TimeEntryUpdate
+
+
+class BulkUpdateResponse(BaseModel):
+    updated_count: int
 
 router = APIRouter(prefix="/api/time-entries", tags=["time-entries"])
 
@@ -149,3 +167,44 @@ def delete_time_entry(entry_id: int, db: Session = Depends(get_db)):
 
     db.delete(entry)
     db.commit()
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_time_entries(request: BulkDeleteRequest, db: Session = Depends(get_db)):
+    """Delete multiple time entries by their IDs."""
+    if not request.ids:
+        return BulkDeleteResponse(deleted_count=0)
+
+    deleted_count = db.query(TimeEntry).filter(
+        TimeEntry.id.in_(request.ids)
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    return BulkDeleteResponse(deleted_count=deleted_count)
+
+
+@router.post("/bulk-update", response_model=BulkUpdateResponse)
+def bulk_update_time_entries(request: BulkUpdateRequest, db: Session = Depends(get_db)):
+    """Update multiple time entries with the same field values."""
+    if not request.ids:
+        return BulkUpdateResponse(updated_count=0)
+
+    update_data = request.updates.model_dump(exclude_unset=True)
+    if not update_data:
+        return BulkUpdateResponse(updated_count=0)
+
+    # Get entries to update
+    entries = db.query(TimeEntry).filter(TimeEntry.id.in_(request.ids)).all()
+    updated_count = 0
+
+    for entry in entries:
+        for field, value in update_data.items():
+            setattr(entry, field, value)
+
+        # Recalculate total_pay if hours or rate changed
+        entry.total_pay = calculate_total_pay(entry.hours, entry.hourly_rate)
+        updated_count += 1
+
+    db.commit()
+
+    return BulkUpdateResponse(updated_count=updated_count)
