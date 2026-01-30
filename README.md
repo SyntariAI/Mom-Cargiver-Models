@@ -30,12 +30,33 @@ A full-stack web application for tracking caregiver hours and shared family expe
 
 ## Quick Start
 
+### One-Command Startup
+
+The easiest way to start the application:
+
+```bash
+# Development mode (with hot reload)
+./start.sh dev
+
+# Docker mode (production-like)
+./start.sh docker
+
+# Stop all services
+./start.sh stop
+
+# Check status
+./start.sh status
+```
+
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
 - npm or yarn
+- Docker (optional, for Docker mode)
 
-### Development Setup
+### Manual Development Setup
+
+If you prefer to start services manually:
 
 1. **Clone the repository**
    ```bash
