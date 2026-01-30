@@ -39,22 +39,22 @@ const CHART_COLORS = [
 const RADIAN = Math.PI / 180;
 
 interface LabelProps {
-  cx: number;
-  cy: number;
-  midAngle: number;
-  innerRadius: number;
-  outerRadius: number;
-  percent: number;
-  name: string;
+  cx?: number;
+  cy?: number;
+  midAngle?: number;
+  innerRadius?: number;
+  outerRadius?: number;
+  percent?: number;
+  name?: string;
 }
 
 const renderCustomizedLabel = ({
-  cx,
-  cy,
-  midAngle,
-  innerRadius,
-  outerRadius,
-  percent,
+  cx = 0,
+  cy = 0,
+  midAngle = 0,
+  innerRadius = 0,
+  outerRadius = 0,
+  percent = 0,
 }: LabelProps) => {
   const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
   const x = cx + radius * Math.cos(-midAngle * RADIAN);
@@ -117,7 +117,7 @@ export function PieChart({
                 borderRadius: 'var(--radius)',
                 color: 'hsl(var(--card-foreground))',
               }}
-              formatter={formatTooltip}
+              formatter={formatTooltip as any}
             />
           )}
           {showLegend && (

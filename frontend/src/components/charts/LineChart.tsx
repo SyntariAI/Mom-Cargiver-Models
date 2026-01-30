@@ -108,7 +108,7 @@ export function LineChart({
                 borderRadius: 'var(--radius)',
                 color: 'hsl(var(--card-foreground))',
               }}
-              formatter={formatTooltip}
+              formatter={formatTooltip as any}
             />
           )}
           {showLegend && (

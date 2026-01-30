@@ -20,7 +20,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [caregivers, setCaregivers] = useState<Caregiver[]>([]);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Handle keyboard shortcut
   useEffect(() => {
