@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -6,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
 from app.models.caregiver import Caregiver
+from app.models.pay_period import PayPeriod, PeriodStatus
 
 
 @pytest.fixture
@@ -33,3 +35,20 @@ def test_create_caregiver(db_session):
     assert caregiver.default_hourly_rate == Decimal("15.00")
     assert caregiver.is_active is True
     assert caregiver.created_at is not None
+
+
+def test_create_pay_period(db_session):
+    period = PayPeriod(
+        start_date=date(2026, 1, 13),
+        end_date=date(2026, 1, 26),
+        status=PeriodStatus.OPEN
+    )
+    db_session.add(period)
+    db_session.commit()
+    db_session.refresh(period)
+
+    assert period.id is not None
+    assert period.start_date == date(2026, 1, 13)
+    assert period.end_date == date(2026, 1, 26)
+    assert period.status == PeriodStatus.OPEN
+    assert period.is_historical is False
