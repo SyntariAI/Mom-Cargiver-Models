@@ -11,6 +11,7 @@ import type {
   ExpenseCategoriesResponse,
   AllTimeSummary,
   PeriodComparisonResponse,
+  SearchResults,
 } from '../types';
 
 // In production, use relative URLs (nginx proxies to backend)
@@ -92,6 +93,12 @@ export const settlements = {
         payment_method: paymentMethod,
       })
       .then((r) => r.data),
+};
+
+// Search
+export const search = {
+  query: (q: string) =>
+    api.get<SearchResults>('/api/search', { params: { q } }).then((r) => r.data),
 };
 
 // Analytics

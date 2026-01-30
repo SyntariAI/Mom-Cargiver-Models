@@ -173,3 +173,13 @@ export interface PeriodComparisonResponse {
     avg_total_cost: string;
   };
 }
+
+// ============================================================================
+// Search Types
+// ============================================================================
+
+export interface SearchResults {
+  time_entries: TimeEntry[];
+  expenses: Expense[];
+  caregivers: Caregiver[];
+}
