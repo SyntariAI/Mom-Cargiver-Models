@@ -52,3 +52,5 @@ def test_create_pay_period(db_session):
     assert period.end_date == date(2026, 1, 26)
     assert period.status == PeriodStatus.OPEN
     assert period.is_historical is False
+    assert period.notes is None
+    assert period.created_at is not None
