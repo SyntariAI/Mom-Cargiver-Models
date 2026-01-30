@@ -47,7 +47,13 @@ import {
   useCreateTimeEntry,
   useUpdateTimeEntry,
   useDeleteTimeEntry,
+  useBulkDeleteTimeEntries,
+  useBulkUpdateTimeEntries,
 } from '@/hooks/use-api';
+import { BulkActionsBar } from '@/components/BulkActionsBar';
+import { BulkDeleteDialog } from '@/components/BulkDeleteDialog';
+import { BulkUpdateTimeEntriesDialog } from '@/components/BulkUpdateTimeEntriesDialog';
+import { ToastAction } from '@/components/ui/toast';
 import type { TimeEntry, Caregiver } from '@/types';
 
 // Form validation schema
@@ -329,6 +335,12 @@ export function TimeEntries() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogEntry, setEditDialogEntry] = useState<TimeEntry | null>(null);
 
+  // Bulk operations state
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [selectedRows, setSelectedRows] = useState<TimeEntry[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false);
+
   // Filter states
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
   const [selectedCaregivers, setSelectedCaregivers] = useState<string[]>([]);
@@ -340,6 +352,8 @@ export function TimeEntries() {
   const { data: entries = [], isLoading } = useTimeEntries(selectedPeriodId);
   const deleteTimeEntry = useDeleteTimeEntry();
   const updateTimeEntry = useUpdateTimeEntry();
+  const bulkDeleteTimeEntries = useBulkDeleteTimeEntries();
+  const bulkUpdateTimeEntries = useBulkUpdateTimeEntries();
   const { toast } = useToast();
 
   // Caregiver options for multi-select and inline editing
@@ -489,6 +503,71 @@ export function TimeEntries() {
     selectedCaregivers.length > 0 ||
     minHours !== '' ||
     maxHours !== '';
+
+  // Bulk operations handlers
+  const handleRowSelectionChange = useCallback((rows: TimeEntry[]) => {
+    setSelectedRows(rows);
+  }, []);
+
+  const clearRowSelection = useCallback(() => {
+    setRowSelection({});
+    setSelectedRows([]);
+  }, []);
+
+  const handleBulkDelete = async () => {
+    const ids = selectedRows.map((row) => row.id);
+    try {
+      const result = await bulkDeleteTimeEntries.mutateAsync(ids);
+      setBulkDeleteDialogOpen(false);
+      clearRowSelection();
+      toast({
+        title: 'Deleted',
+        description: `Deleted ${result.deleted_count} time entries.`,
+        action: (
+          <ToastAction
+            altText="Undo"
+            onClick={() => {
+              toast({
+                title: 'Undo not available',
+                description: 'Undo is not available for bulk delete operations.',
+                variant: 'destructive',
+              });
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    } catch (error) {
+      console.error('Failed to bulk delete time entries:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete time entries.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleBulkUpdate = async (field: 'caregiver_id' | 'hourly_rate', value: string | number) => {
+    const ids = selectedRows.map((row) => row.id);
+    const updates = { [field]: value };
+    try {
+      const result = await bulkUpdateTimeEntries.mutateAsync({ ids, updates });
+      setBulkUpdateDialogOpen(false);
+      clearRowSelection();
+      toast({
+        title: 'Updated',
+        description: `Updated ${result.updated_count} time entries.`,
+      });
+    } catch (error) {
+      console.error('Failed to bulk update time entries:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update time entries.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Edit dialog fields config
   const editDialogFields: FieldConfig[] = useMemo(() => [
@@ -831,6 +910,17 @@ export function TimeEntries() {
         </CardContent>
       </Card>
 
+      {/* Bulk Actions Bar */}
+      {selectedRows.length > 0 && (
+        <BulkActionsBar
+          selectedCount={selectedRows.length}
+          onDelete={() => setBulkDeleteDialogOpen(true)}
+          onUpdate={() => setBulkUpdateDialogOpen(true)}
+          onClearSelection={clearRowSelection}
+          itemLabel="time entry"
+        />
+      )}
+
       {/* Time Entries Table */}
       <Card>
         <CardHeader>
@@ -843,6 +933,9 @@ export function TimeEntries() {
             isLoading={isLoading}
             emptyMessage='No time entries found. Click "Add Entry" to create one.'
             enableRowSelection={true}
+            rowSelection={rowSelection}
+            onRowSelectionStateChange={setRowSelection}
+            onRowSelectionChange={handleRowSelectionChange}
             footerContent={filteredEntries.length > 0 ? footerContent : undefined}
           />
         </CardContent>
@@ -897,6 +990,26 @@ export function TimeEntries() {
           isLoading={updateTimeEntry.isPending}
         />
       )}
+
+      {/* Bulk Delete Dialog */}
+      <BulkDeleteDialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={setBulkDeleteDialogOpen}
+        count={selectedRows.length}
+        itemLabel="time entry"
+        onConfirm={handleBulkDelete}
+        isLoading={bulkDeleteTimeEntries.isPending}
+      />
+
+      {/* Bulk Update Dialog */}
+      <BulkUpdateTimeEntriesDialog
+        open={bulkUpdateDialogOpen}
+        onOpenChange={setBulkUpdateDialogOpen}
+        count={selectedRows.length}
+        caregivers={caregivers}
+        onConfirm={handleBulkUpdate}
+        isLoading={bulkUpdateTimeEntries.isPending}
+      />
     </div>
   );
 }

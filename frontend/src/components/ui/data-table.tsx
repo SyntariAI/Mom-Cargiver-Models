@@ -55,6 +55,8 @@ interface DataTableProps<TData, TValue> {
   pageSizeOptions?: number[]
   defaultPageSize?: number
   onRowSelectionChange?: (selectedRows: TData[]) => void
+  rowSelection?: Record<string, boolean>
+  onRowSelectionStateChange?: (rowSelection: Record<string, boolean>) => void
   isLoading?: boolean
   emptyMessage?: string
   footerContent?: React.ReactNode
@@ -124,6 +126,8 @@ export function DataTable<TData, TValue>({
   pageSizeOptions = [25, 50, 100],
   defaultPageSize = 25,
   onRowSelectionChange,
+  rowSelection: controlledRowSelection,
+  onRowSelectionStateChange,
   isLoading = false,
   emptyMessage = "No results.",
   footerContent,
@@ -131,7 +135,23 @@ export function DataTable<TData, TValue>({
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({})
-  const [rowSelection, setRowSelection] = React.useState({})
+  const [internalRowSelection, setInternalRowSelection] = React.useState<Record<string, boolean>>({})
+
+  // Use controlled row selection if provided, otherwise use internal state
+  const rowSelection = controlledRowSelection ?? internalRowSelection
+
+  // Handle row selection change - supports both controlled and uncontrolled modes
+  const handleRowSelectionChange = React.useCallback((updaterOrValue: Record<string, boolean> | ((old: Record<string, boolean>) => Record<string, boolean>)) => {
+    const newValue = typeof updaterOrValue === 'function'
+      ? updaterOrValue(rowSelection)
+      : updaterOrValue
+
+    if (onRowSelectionStateChange) {
+      onRowSelectionStateChange(newValue)
+    } else {
+      setInternalRowSelection(newValue)
+    }
+  }, [rowSelection, onRowSelectionStateChange])
 
   // Prepend selection column if enabled
   const tableColumns = React.useMemo(() => {
@@ -151,7 +171,7 @@ export function DataTable<TData, TValue>({
     ...(enableSorting && { getSortedRowModel: getSortedRowModel() }),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
+    onRowSelectionChange: handleRowSelectionChange,
     state: {
       sorting,
       columnFilters,

@@ -48,7 +48,13 @@ import {
   useCreateExpense,
   useDeleteExpense,
   useUpdateExpense,
+  useBulkDeleteExpenses,
+  useBulkUpdateExpenses,
 } from '@/hooks/use-api';
+import { BulkActionsBar } from '@/components/BulkActionsBar';
+import { BulkDeleteDialog } from '@/components/BulkDeleteDialog';
+import { BulkUpdateExpensesDialog } from '@/components/BulkUpdateExpensesDialog';
+import { ToastAction } from '@/components/ui/toast';
 import type { Expense, ExpenseCategory } from '@/types';
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -110,6 +116,12 @@ export function Expenses() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editDialogExpense, setEditDialogExpense] = useState<Expense | null>(null);
 
+  // Bulk operations state
+  const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
+  const [selectedRows, setSelectedRows] = useState<Expense[]>([]);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false);
+
   // Filter states
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
   const [selectedPaidBy, setSelectedPaidBy] = useState<string[]>([]);
@@ -124,6 +136,8 @@ export function Expenses() {
   const createExpense = useCreateExpense();
   const updateExpense = useUpdateExpense();
   const deleteExpense = useDeleteExpense();
+  const bulkDeleteExpenses = useBulkDeleteExpenses();
+  const bulkUpdateExpenses = useBulkUpdateExpenses();
   const { toast } = useToast();
 
   const form = useForm<ExpenseFormValues>({
@@ -351,6 +365,71 @@ export function Expenses() {
     selectedCategories.length > 0 ||
     minAmount !== '' ||
     maxAmount !== '';
+
+  // Bulk operations handlers
+  const handleRowSelectionChange = useCallback((rows: Expense[]) => {
+    setSelectedRows(rows);
+  }, []);
+
+  const clearRowSelection = useCallback(() => {
+    setRowSelection({});
+    setSelectedRows([]);
+  }, []);
+
+  const handleBulkDelete = async () => {
+    const ids = selectedRows.map((row) => row.id);
+    try {
+      const result = await bulkDeleteExpenses.mutateAsync(ids);
+      setBulkDeleteDialogOpen(false);
+      clearRowSelection();
+      toast({
+        title: 'Deleted',
+        description: `Deleted ${result.deleted_count} expenses.`,
+        action: (
+          <ToastAction
+            altText="Undo"
+            onClick={() => {
+              toast({
+                title: 'Undo not available',
+                description: 'Undo is not available for bulk delete operations.',
+                variant: 'destructive',
+              });
+            }}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    } catch (error) {
+      console.error('Failed to bulk delete expenses:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete expenses.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleBulkUpdate = async (field: 'paid_by' | 'category', value: string) => {
+    const ids = selectedRows.map((row) => row.id);
+    const updates = { [field]: value };
+    try {
+      const result = await bulkUpdateExpenses.mutateAsync({ ids, updates });
+      setBulkUpdateDialogOpen(false);
+      clearRowSelection();
+      toast({
+        title: 'Updated',
+        description: `Updated ${result.updated_count} expenses.`,
+      });
+    } catch (error) {
+      console.error('Failed to bulk update expenses:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update expenses.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Edit dialog fields config
   const editDialogFields: FieldConfig[] = useMemo(() => [
@@ -925,6 +1004,17 @@ export function Expenses() {
         </CardContent>
       </Card>
 
+      {/* Bulk Actions Bar */}
+      {selectedRows.length > 0 && (
+        <BulkActionsBar
+          selectedCount={selectedRows.length}
+          onDelete={() => setBulkDeleteDialogOpen(true)}
+          onUpdate={() => setBulkUpdateDialogOpen(true)}
+          onClearSelection={clearRowSelection}
+          itemLabel="expense"
+        />
+      )}
+
       {/* Expenses Table */}
       <Card>
         <CardHeader>
@@ -937,6 +1027,9 @@ export function Expenses() {
             isLoading={periodsLoading || expensesLoading}
             emptyMessage="No expenses found. Add your first expense to get started."
             enableRowSelection={true}
+            rowSelection={rowSelection}
+            onRowSelectionStateChange={setRowSelection}
+            onRowSelectionChange={handleRowSelectionChange}
             footerContent={filteredExpenses.length > 0 ? footerContent : undefined}
           />
         </CardContent>
@@ -963,6 +1056,25 @@ export function Expenses() {
           isLoading={updateExpense.isPending}
         />
       )}
+
+      {/* Bulk Delete Dialog */}
+      <BulkDeleteDialog
+        open={bulkDeleteDialogOpen}
+        onOpenChange={setBulkDeleteDialogOpen}
+        count={selectedRows.length}
+        itemLabel="expense"
+        onConfirm={handleBulkDelete}
+        isLoading={bulkDeleteExpenses.isPending}
+      />
+
+      {/* Bulk Update Dialog */}
+      <BulkUpdateExpensesDialog
+        open={bulkUpdateDialogOpen}
+        onOpenChange={setBulkUpdateDialogOpen}
+        count={selectedRows.length}
+        onConfirm={handleBulkUpdate}
+        isLoading={bulkUpdateExpenses.isPending}
+      />
     </div>
   );
 }

@@ -190,6 +190,29 @@ export function useDeleteTimeEntry() {
   });
 }
 
+export function useBulkDeleteTimeEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => timeEntries.bulkDelete(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['settlements'] });
+    },
+  });
+}
+
+export function useBulkUpdateTimeEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, updates }: { ids: number[]; updates: Partial<TimeEntry> }) =>
+      timeEntries.bulkUpdate(ids, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['settlements'] });
+    },
+  });
+}
+
 // ============================================================================
 // Expenses
 // ============================================================================
@@ -264,6 +287,29 @@ export function useDeleteExpense() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       // Invalidate all expense summaries and settlements
+      queryClient.invalidateQueries({ queryKey: ['settlements'] });
+    },
+  });
+}
+
+export function useBulkDeleteExpenses() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => expenses.bulkDelete(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['settlements'] });
+    },
+  });
+}
+
+export function useBulkUpdateExpenses() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, updates }: { ids: number[]; updates: Partial<Expense> }) =>
+      expenses.bulkUpdate(ids, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['settlements'] });
     },
   });
