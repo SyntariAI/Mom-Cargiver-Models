@@ -44,6 +44,14 @@ def mark_settled(
     request: MarkSettledRequest,
     db: Session = Depends(get_db)
 ):
+    # Verify period exists
+    period = db.query(PayPeriod).filter(PayPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pay period not found"
+        )
+
     settlement = db.query(Settlement).filter(
         Settlement.pay_period_id == period_id
     ).first()

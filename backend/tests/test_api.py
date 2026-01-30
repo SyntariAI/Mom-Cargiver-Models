@@ -387,3 +387,8 @@ def test_mark_settled(client):
     assert response.status_code == 200
     assert response.json()["settled"] is True
     assert response.json()["payment_method"] == "Venmo"
+
+
+def test_get_settlement_not_found(client):
+    response = client.get("/api/settlements/9999")
+    assert response.status_code == 404
