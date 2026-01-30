@@ -89,3 +89,55 @@ def test_deactivate_caregiver(client):
     # Verify deactivated
     get_response = client.get(f"/api/caregivers/{caregiver_id}")
     assert get_response.json()["is_active"] is False
+
+
+def test_create_pay_period(client):
+    response = client.post(
+        "/api/pay-periods",
+        json={
+            "start_date": "2026-01-13",
+            "end_date": "2026-01-26"
+        }
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["start_date"] == "2026-01-13"
+    assert data["end_date"] == "2026-01-26"
+    assert data["status"] == "open"
+
+
+def test_get_current_period(client):
+    client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+
+    response = client.get("/api/pay-periods/current")
+    assert response.status_code == 200
+    assert response.json()["status"] == "open"
+
+
+def test_close_period(client):
+    create_response = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+    period_id = create_response.json()["id"]
+
+    response = client.post(f"/api/pay-periods/{period_id}/close")
+    assert response.status_code == 200
+    assert response.json()["status"] == "closed"
+
+
+def test_only_one_open_period(client):
+    client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+
+    response = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-27", "end_date": "2026-02-09"}
+    )
+    assert response.status_code == 400
+    assert "already an open period" in response.json()["detail"].lower()
