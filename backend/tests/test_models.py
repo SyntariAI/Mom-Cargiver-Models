@@ -10,6 +10,7 @@ from app.models.caregiver import Caregiver
 from app.models.pay_period import PayPeriod, PeriodStatus
 from app.models.time_entry import TimeEntry
 from app.models.expense import Expense, Payer, ExpenseCategory
+from app.models.settlement import Settlement, SettlementDirection
 
 
 @pytest.fixture
@@ -119,3 +120,35 @@ def test_create_expense(db_session):
     assert expense.is_recurring is False
     assert expense.date_estimated is False
     assert expense.created_at is not None
+
+
+def test_create_settlement(db_session):
+    period = PayPeriod(
+        start_date=date(2026, 1, 13),
+        end_date=date(2026, 1, 26),
+        status=PeriodStatus.CLOSED
+    )
+    db_session.add(period)
+    db_session.commit()
+
+    settlement = Settlement(
+        pay_period_id=period.id,
+        total_caregiver_cost=Decimal("1875.00"),
+        total_expenses=Decimal("1258.85"),
+        adi_paid=Decimal("805.00"),
+        rafi_paid=Decimal("1698.85"),
+        settlement_amount=Decimal("446.93"),
+        settlement_direction=SettlementDirection.ADI_OWES_RAFI,
+        final_amount=Decimal("446.93"),
+        settled=False
+    )
+    db_session.add(settlement)
+    db_session.commit()
+    db_session.refresh(settlement)
+
+    assert settlement.id is not None
+    assert settlement.settlement_direction == SettlementDirection.ADI_OWES_RAFI
+    assert settlement.final_amount == Decimal("446.93")
+    assert settlement.settled is False
+    assert settlement.carryover_amount == Decimal("0.00")
+    assert settlement.created_at is not None
