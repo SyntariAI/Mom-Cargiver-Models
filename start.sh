@@ -117,7 +117,7 @@ start_dev() {
     print_status "Starting backend server..."
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
-    uvicorn app.main:app --reload --port 8000 &
+    uvicorn app.main:app --reload --port 8000 --reload-exclude 'venv/*' &
     BACKEND_PID=$!
     echo $BACKEND_PID > "$SCRIPT_DIR/.backend.pid"
 
