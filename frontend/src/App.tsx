@@ -1,51 +1,10 @@
 import { Routes, Route } from 'react-router-dom'
 import { Layout } from '@/components/layout'
-
-// Placeholder page components
-function Dashboard() {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold">Dashboard</h2>
-      <p className="mt-2 text-muted-foreground">Welcome to the Caregiver Tracker</p>
-    </div>
-  )
-}
-
-function TimeEntries() {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold">Time Entries</h2>
-      <p className="mt-2 text-muted-foreground">Track caregiver hours</p>
-    </div>
-  )
-}
-
-function Expenses() {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold">Expenses</h2>
-      <p className="mt-2 text-muted-foreground">Track caregiver expenses</p>
-    </div>
-  )
-}
-
-function Caregivers() {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold">Caregivers</h2>
-      <p className="mt-2 text-muted-foreground">Manage caregivers</p>
-    </div>
-  )
-}
-
-function PayPeriods() {
-  return (
-    <div>
-      <h2 className="text-2xl font-bold">Pay Periods</h2>
-      <p className="mt-2 text-muted-foreground">Manage pay periods and settlements</p>
-    </div>
-  )
-}
+import { Dashboard } from '@/pages/Dashboard'
+import { TimeEntries } from '@/pages/TimeEntries'
+import { Expenses } from '@/pages/Expenses'
+import { Caregivers } from '@/pages/Caregivers'
+import { PayPeriods } from '@/pages/PayPeriods'
 
 function App() {
   return (
