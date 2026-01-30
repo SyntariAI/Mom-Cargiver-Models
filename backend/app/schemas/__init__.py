@@ -11,6 +11,9 @@ from app.schemas.time_entry import (
 from app.schemas.expense import (
     ExpenseBase, ExpenseCreate, ExpenseUpdate, ExpenseResponse, ExpenseSummary
 )
+from app.schemas.settlement import (
+    SettlementResponse, MarkSettledRequest
+)
 
 __all__ = [
     "CaregiverBase", "CaregiverCreate", "CaregiverUpdate", "CaregiverResponse",
@@ -18,4 +21,5 @@ __all__ = [
     "TimeEntryBase", "TimeEntryCreate", "TimeEntryUpdate", "TimeEntryResponse",
     "TimeEntryBulkCreate",
     "ExpenseBase", "ExpenseCreate", "ExpenseUpdate", "ExpenseResponse", "ExpenseSummary",
+    "SettlementResponse", "MarkSettledRequest",
 ]

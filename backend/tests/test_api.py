@@ -334,3 +334,56 @@ def test_expense_summary(client):
     data = response.json()
     assert data["rafi_total"] == "800.00"
     assert data["adi_total"] == "85.00"
+
+
+def test_get_settlement(client):
+    # Setup period with data
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    cg = client.post("/api/caregivers", json={"name": "Julia"}).json()
+
+    client.post("/api/time-entries", json={
+        "caregiver_id": cg["id"],
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "hours": "12.00",
+        "hourly_rate": "15.00"
+    })
+
+    client.post("/api/expenses", json={
+        "pay_period_id": period["id"],
+        "date": "2026-01-15",
+        "description": "Julia payment",
+        "amount": "180.00",
+        "paid_by": "Adi",
+        "category": "Caregiver Payment"
+    })
+
+    response = client.get(f"/api/settlements/{period['id']}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_caregiver_cost"] == "180.00"
+    assert data["adi_paid"] == "180.00"
+    assert data["rafi_paid"] == "0.00"
+
+
+def test_mark_settled(client):
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    # Get settlement first (creates it)
+    client.get(f"/api/settlements/{period['id']}")
+
+    # Mark as settled
+    response = client.post(
+        f"/api/settlements/{period['id']}/mark-settled",
+        json={"payment_method": "Venmo"}
+    )
+    assert response.status_code == 200
+    assert response.json()["settled"] is True
+    assert response.json()["payment_method"] == "Venmo"

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+import datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -6,7 +6,7 @@ from app.models.expense import Payer, ExpenseCategory
 
 
 class ExpenseBase(BaseModel):
-    date: date
+    date: datetime.date
     description: str
     amount: Decimal
     paid_by: Payer
@@ -27,7 +27,7 @@ class ExpenseCreate(ExpenseBase):
 
 
 class ExpenseUpdate(BaseModel):
-    date: date | None = None
+    date: datetime.date | None = None
     description: str | None = None
     amount: Decimal | None = None
     paid_by: Payer | None = None
@@ -40,7 +40,7 @@ class ExpenseResponse(ExpenseBase):
     id: int
     pay_period_id: int
     date_estimated: bool
-    created_at: datetime
+    created_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
 

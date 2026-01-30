@@ -1,12 +1,12 @@
-from datetime import date, datetime
+import datetime
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.models.pay_period import PeriodStatus
 
 
 class PayPeriodBase(BaseModel):
-    start_date: date
-    end_date: date
+    start_date: datetime.date
+    end_date: datetime.date
     notes: str | None = None
 
 
@@ -27,6 +27,6 @@ class PayPeriodResponse(PayPeriodBase):
     id: int
     status: PeriodStatus
     is_historical: bool
-    created_at: datetime
+    created_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)

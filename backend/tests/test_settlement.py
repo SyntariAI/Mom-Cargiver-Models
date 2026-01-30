@@ -85,7 +85,7 @@ def test_calculate_settlement_rafi_owes_adi(db_session):
     assert result.total_expenses == Decimal("1020")
     assert result.adi_paid == Decimal("820")
     assert result.rafi_paid == Decimal("200")
-    assert result.settlement_direction.value == "rafi_owes_adi"
+    assert result.settlement_direction == "rafi_owes_adi"
     assert result.settlement_amount == Decimal("310")
     assert result.final_amount == Decimal("310")
 
@@ -127,7 +127,7 @@ def test_calculate_settlement_adi_owes_rafi(db_session):
 
     result = calculate_settlement(db_session, period.id)
 
-    assert result.settlement_direction.value == "adi_owes_rafi"
+    assert result.settlement_direction == "adi_owes_rafi"
     assert result.settlement_amount == Decimal("300")
 
 
@@ -161,5 +161,5 @@ def test_calculate_settlement_even(db_session):
 
     result = calculate_settlement(db_session, period.id)
 
-    assert result.settlement_direction.value == "even"
+    assert result.settlement_direction == "even"
     assert result.settlement_amount == Decimal("0")

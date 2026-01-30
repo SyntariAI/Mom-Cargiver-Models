@@ -1,13 +1,13 @@
-from datetime import date, time, datetime
+import datetime
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class TimeEntryBase(BaseModel):
     caregiver_id: int
-    date: date
-    time_in: time | None = None
-    time_out: time | None = None
+    date: datetime.date
+    time_in: datetime.time | None = None
+    time_out: datetime.time | None = None
     hours: Decimal
     hourly_rate: Decimal
     notes: str | None = None
@@ -27,8 +27,8 @@ class TimeEntryCreate(TimeEntryBase):
 
 
 class TimeEntryUpdate(BaseModel):
-    time_in: time | None = None
-    time_out: time | None = None
+    time_in: datetime.time | None = None
+    time_out: datetime.time | None = None
     hours: Decimal | None = None
     hourly_rate: Decimal | None = None
     notes: str | None = None
@@ -38,7 +38,7 @@ class TimeEntryResponse(TimeEntryBase):
     id: int
     pay_period_id: int
     total_pay: Decimal
-    created_at: datetime
+    created_at: datetime.datetime
     caregiver_name: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
