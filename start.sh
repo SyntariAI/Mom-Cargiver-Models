@@ -83,6 +83,11 @@ start_dev() {
     echo "Starting in DEVELOPMENT mode..."
     echo ""
 
+    # Stop any existing services first
+    echo "Checking for existing services..."
+    stop_services_quiet
+    echo ""
+
     check_dependencies
 
     # Create data directory if it doesn't exist
@@ -174,6 +179,11 @@ start_docker() {
     echo "Starting with DOCKER..."
     echo ""
 
+    # Stop any existing services first
+    echo "Checking for existing services..."
+    stop_services_quiet
+    echo ""
+
     check_docker
 
     # Create data directory if it doesn't exist
@@ -208,23 +218,20 @@ start_docker() {
     echo ""
 }
 
-stop_services() {
-    print_header
-    echo "Stopping services..."
-    echo ""
-
+stop_services_quiet() {
     # Stop Docker containers if running
     if docker-compose ps -q 2>/dev/null | grep -q .; then
         print_status "Stopping Docker containers..."
-        docker-compose down
+        docker-compose down 2>/dev/null || true
     fi
 
     # Stop development processes
     if [ -f "$SCRIPT_DIR/.backend.pid" ]; then
         PID=$(cat "$SCRIPT_DIR/.backend.pid")
         if kill -0 "$PID" 2>/dev/null; then
-            print_status "Stopping backend (PID: $PID)..."
+            print_status "Stopping existing backend..."
             kill "$PID" 2>/dev/null || true
+            sleep 1
         fi
         rm -f "$SCRIPT_DIR/.backend.pid"
     fi
@@ -232,15 +239,27 @@ stop_services() {
     if [ -f "$SCRIPT_DIR/.frontend.pid" ]; then
         PID=$(cat "$SCRIPT_DIR/.frontend.pid")
         if kill -0 "$PID" 2>/dev/null; then
-            print_status "Stopping frontend (PID: $PID)..."
+            print_status "Stopping existing frontend..."
             kill "$PID" 2>/dev/null || true
+            sleep 1
         fi
         rm -f "$SCRIPT_DIR/.frontend.pid"
     fi
 
     # Kill any remaining uvicorn or vite processes for this project
     pkill -f "uvicorn app.main:app" 2>/dev/null || true
-    pkill -f "vite.*frontend" 2>/dev/null || true
+    pkill -f "vite" 2>/dev/null || true
+
+    # Wait for ports to be released
+    sleep 1
+}
+
+stop_services() {
+    print_header
+    echo "Stopping services..."
+    echo ""
+
+    stop_services_quiet
 
     print_status "All services stopped"
 }
