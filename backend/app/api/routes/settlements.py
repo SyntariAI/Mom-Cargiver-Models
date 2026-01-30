@@ -67,3 +67,38 @@ def mark_settled(
     db.commit()
     db.refresh(settlement)
     return settlement
+
+
+@router.post("/{period_id}/unsettle", response_model=SettlementResponse)
+def unsettle(period_id: int, db: Session = Depends(get_db)):
+    # Verify period exists
+    period = db.query(PayPeriod).filter(PayPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pay period not found"
+        )
+
+    settlement = db.query(Settlement).filter(
+        Settlement.pay_period_id == period_id
+    ).first()
+
+    if not settlement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Settlement not found for this period"
+        )
+
+    if not settlement.settled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Settlement is not settled"
+        )
+
+    # Unsettle: set settled=False, clear settled_at, keep other data
+    settlement.settled = False
+    settlement.settled_at = None
+
+    db.commit()
+    db.refresh(settlement)
+    return settlement

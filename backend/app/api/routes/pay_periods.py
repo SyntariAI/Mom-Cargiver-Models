@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.models.pay_period import PayPeriod, PeriodStatus
+from app.models.settlement import Settlement
 from app.schemas.pay_period import (
     PayPeriodCreate, PayPeriodUpdate, PayPeriodResponse
 )
@@ -100,6 +101,46 @@ def close_pay_period(period_id: int, db: Session = Depends(get_db)):
         )
 
     period.status = PeriodStatus.CLOSED
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+@router.post("/{period_id}/reopen", response_model=PayPeriodResponse)
+def reopen_pay_period(period_id: int, db: Session = Depends(get_db)):
+    period = db.query(PayPeriod).filter(PayPeriod.id == period_id).first()
+    if not period:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pay period not found"
+        )
+
+    if period.status == PeriodStatus.OPEN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Period is already open"
+        )
+
+    # Check if there's already another open period
+    existing_open = db.query(PayPeriod).filter(
+        PayPeriod.status == PeriodStatus.OPEN,
+        PayPeriod.id != period_id
+    ).first()
+    if existing_open:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="There is already an open period. Close it before reopening this one."
+        )
+
+    # If period was settled, also unsettle it
+    settlement = db.query(Settlement).filter(
+        Settlement.pay_period_id == period_id
+    ).first()
+    if settlement and settlement.settled:
+        settlement.settled = False
+        settlement.settled_at = None
+
+    period.status = PeriodStatus.OPEN
     db.commit()
     db.refresh(period)
     return period

@@ -392,3 +392,161 @@ def test_mark_settled(client):
 def test_get_settlement_not_found(client):
     response = client.get("/api/settlements/9999")
     assert response.status_code == 404
+
+
+# =============================================================================
+# Task #36: Reopen period and unsettle endpoints
+# =============================================================================
+
+def test_reopen_closed_period(client):
+    """Test reopening a closed pay period."""
+    # Create and close a period
+    create_response = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+    period_id = create_response.json()["id"]
+
+    client.post(f"/api/pay-periods/{period_id}/close")
+
+    # Reopen it
+    response = client.post(f"/api/pay-periods/{period_id}/reopen")
+    assert response.status_code == 200
+    assert response.json()["status"] == "open"
+
+
+def test_reopen_already_open_period_fails(client):
+    """Test that reopening an already open period returns an error."""
+    create_response = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    )
+    period_id = create_response.json()["id"]
+
+    response = client.post(f"/api/pay-periods/{period_id}/reopen")
+    assert response.status_code == 400
+    assert "already open" in response.json()["detail"].lower()
+
+
+def test_reopen_period_not_found(client):
+    """Test that reopening a non-existent period returns 404."""
+    response = client.post("/api/pay-periods/9999/reopen")
+    assert response.status_code == 404
+
+
+def test_reopen_when_another_period_is_open_fails(client):
+    """Test that reopening fails when there's already another open period."""
+    # Create first period and close it
+    period1 = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+    client.post(f"/api/pay-periods/{period1['id']}/close")
+
+    # Create second period (will be open)
+    client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-27", "end_date": "2026-02-09"}
+    )
+
+    # Try to reopen first period - should fail
+    response = client.post(f"/api/pay-periods/{period1['id']}/reopen")
+    assert response.status_code == 400
+    assert "already an open period" in response.json()["detail"].lower()
+
+
+def test_reopen_settled_period_unsettles_it(client):
+    """Test that reopening a settled period also unsettles it."""
+    # Create period
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    # Get settlement (creates it)
+    client.get(f"/api/settlements/{period['id']}")
+
+    # Mark as settled
+    client.post(
+        f"/api/settlements/{period['id']}/mark-settled",
+        json={"payment_method": "Venmo"}
+    )
+
+    # Close the period
+    client.post(f"/api/pay-periods/{period['id']}/close")
+
+    # Reopen the period
+    response = client.post(f"/api/pay-periods/{period['id']}/reopen")
+    assert response.status_code == 200
+    assert response.json()["status"] == "open"
+
+    # Check that settlement is now unsettled
+    settlement = client.get(f"/api/settlements/{period['id']}").json()
+    assert settlement["settled"] is False
+    assert settlement["settled_at"] is None
+
+
+def test_unsettle_settled_period(client):
+    """Test unsettling a settled period."""
+    # Create period
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    # Get settlement (creates it)
+    client.get(f"/api/settlements/{period['id']}")
+
+    # Mark as settled
+    settled = client.post(
+        f"/api/settlements/{period['id']}/mark-settled",
+        json={"payment_method": "Venmo"}
+    ).json()
+    assert settled["settled"] is True
+    assert settled["payment_method"] == "Venmo"
+
+    # Unsettle
+    response = client.post(f"/api/settlements/{period['id']}/unsettle")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["settled"] is False
+    assert data["settled_at"] is None
+    # Payment method should be retained
+    assert data["payment_method"] == "Venmo"
+
+
+def test_unsettle_not_settled_fails(client):
+    """Test that unsettling a non-settled period returns an error."""
+    # Create period
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    # Get settlement (creates it but it's not settled)
+    client.get(f"/api/settlements/{period['id']}")
+
+    # Try to unsettle
+    response = client.post(f"/api/settlements/{period['id']}/unsettle")
+    assert response.status_code == 400
+    assert "not settled" in response.json()["detail"].lower()
+
+
+def test_unsettle_no_settlement_fails(client):
+    """Test that unsettling fails when there's no settlement for the period."""
+    # Create period but don't create a settlement
+    period = client.post(
+        "/api/pay-periods",
+        json={"start_date": "2026-01-13", "end_date": "2026-01-26"}
+    ).json()
+
+    # Try to unsettle (no settlement exists)
+    response = client.post(f"/api/settlements/{period['id']}/unsettle")
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_unsettle_period_not_found(client):
+    """Test that unsettling a non-existent period returns 404."""
+    response = client.post("/api/settlements/9999/unsettle")
+    assert response.status_code == 404
