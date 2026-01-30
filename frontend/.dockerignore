@@ -2,6 +2,5 @@ node_modules
 __pycache__
 .git
 *.pyc
-dist
 .env
 .env.local
