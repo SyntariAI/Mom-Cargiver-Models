@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -28,6 +30,6 @@ def test_create_caregiver(db_session):
 
     assert caregiver.id is not None
     assert caregiver.name == "Julia"
-    assert caregiver.default_hourly_rate == 15.00
+    assert caregiver.default_hourly_rate == Decimal("15.00")
     assert caregiver.is_active is True
     assert caregiver.created_at is not None
