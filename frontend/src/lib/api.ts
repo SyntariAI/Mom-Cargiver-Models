@@ -47,6 +47,8 @@ export const payPeriods = {
     api.post<PayPeriod>('/api/pay-periods', data).then((r) => r.data),
   close: (id: number) =>
     api.post<PayPeriod>(`/api/pay-periods/${id}/close`).then((r) => r.data),
+  reopen: (id: number) =>
+    api.post<PayPeriod>(`/api/pay-periods/${id}/reopen`).then((r) => r.data),
 };
 
 // Time Entries
@@ -61,6 +63,10 @@ export const timeEntries = {
   update: (id: number, data: Partial<TimeEntry>) =>
     api.put<TimeEntry>(`/api/time-entries/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/api/time-entries/${id}`),
+  bulkDelete: (ids: number[]) =>
+    api.post<{ deleted_count: number }>('/api/time-entries/bulk-delete', { ids }).then((r) => r.data),
+  bulkUpdate: (ids: number[], updates: Partial<TimeEntry>) =>
+    api.post<{ updated_count: number }>('/api/time-entries/bulk-update', { ids, updates }).then((r) => r.data),
 };
 
 // Expenses
@@ -79,6 +85,10 @@ export const expenses = {
   update: (id: number, data: Partial<Expense>) =>
     api.put<Expense>(`/api/expenses/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/api/expenses/${id}`),
+  bulkDelete: (ids: number[]) =>
+    api.post<{ deleted_count: number }>('/api/expenses/bulk-delete', { ids }).then((r) => r.data),
+  bulkUpdate: (ids: number[], updates: Partial<Expense>) =>
+    api.post<{ updated_count: number }>('/api/expenses/bulk-update', { ids, updates }).then((r) => r.data),
 };
 
 // Settlements
@@ -93,6 +103,8 @@ export const settlements = {
         payment_method: paymentMethod,
       })
       .then((r) => r.data),
+  unsettle: (periodId: number) =>
+    api.post<Settlement>(`/api/settlements/${periodId}/unsettle`).then((r) => r.data),
 };
 
 // Search

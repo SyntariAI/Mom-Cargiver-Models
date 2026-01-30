@@ -113,6 +113,18 @@ export function useClosePeriod() {
   });
 }
 
+export function useReopenPeriod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => payPeriods.reopen(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ['payPeriods'] });
+      queryClient.invalidateQueries({ queryKey: ['payPeriods', id] });
+      queryClient.invalidateQueries({ queryKey: ['payPeriods', 'current'] });
+    },
+  });
+}
+
 // ============================================================================
 // Time Entries
 // ============================================================================
@@ -292,6 +304,20 @@ export function useMarkSettled() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ['settlements', variables.periodId],
+      });
+      // Also invalidate pay periods since settlement status may affect display
+      queryClient.invalidateQueries({ queryKey: ['payPeriods'] });
+    },
+  });
+}
+
+export function useUnsettle() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (periodId: number) => settlements.unsettle(periodId),
+    onSuccess: (_, periodId) => {
+      queryClient.invalidateQueries({
+        queryKey: ['settlements', periodId],
       });
       // Also invalidate pay periods since settlement status may affect display
       queryClient.invalidateQueries({ queryKey: ['payPeriods'] });

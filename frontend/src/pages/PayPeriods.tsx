@@ -1,7 +1,20 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { format, addDays, parseISO } from 'date-fns';
-import { Plus, Calendar, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import {
+  Plus,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  RotateCcw,
+  GitCompare,
+  Clock,
+  DollarSign,
+  Receipt,
+  CheckCircle,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +26,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -22,13 +36,23 @@ import {
   DialogClose,
   DialogDescription,
 } from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 import {
   usePayPeriods,
   useCreatePayPeriod,
   useClosePeriod,
+  useReopenPeriod,
   useSettlement,
 } from '@/hooks/use-api';
+import { usePeriodComparison } from '@/hooks/use-analytics';
 import type { PayPeriod } from '@/types';
 
 // Helper function to format currency
@@ -82,63 +106,119 @@ interface PeriodCardProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   onClose: () => void;
+  onReopen: () => void;
   isClosing: boolean;
+  isReopening: boolean;
+  isSelected: boolean;
+  onSelectionChange: (checked: boolean) => void;
 }
 
-function PeriodCard({ period, isExpanded, onToggleExpand, onClose, isClosing }: PeriodCardProps) {
+function PeriodCard({
+  period,
+  isExpanded,
+  onToggleExpand,
+  onClose,
+  onReopen,
+  isClosing,
+  isReopening,
+  isSelected,
+  onSelectionChange,
+}: PeriodCardProps) {
   const { data: settlement, isLoading: settlementLoading } = useSettlement(period.id);
+  const navigate = useNavigate();
 
   return (
-    <Card>
+    <Card className={isSelected ? 'ring-2 ring-primary' : ''}>
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onToggleExpand}
-              className="p-1 hover:bg-muted rounded-sm transition-colors"
-              aria-label={isExpanded ? 'Collapse' : 'Expand'}
-            >
-              {isExpanded ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </button>
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                {formatDateRange(period.start_date, period.end_date)}
-              </CardTitle>
-              {period.notes && (
-                <CardDescription className="mt-1">{period.notes}</CardDescription>
-              )}
-            </div>
+        <div className="flex items-start gap-3">
+          {/* Selection Checkbox */}
+          <div className="pt-1">
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={onSelectionChange}
+              aria-label={`Select period ${formatDateRange(period.start_date, period.end_date)}`}
+            />
           </div>
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              period.status === 'open'
-                ? 'bg-green-100 text-green-800'
-                : 'bg-gray-100 text-gray-800'
-            }`}
+
+          {/* Expand/Collapse Button */}
+          <button
+            onClick={onToggleExpand}
+            className="p-1 hover:bg-muted rounded-sm transition-colors mt-0.5"
+            aria-label={isExpanded ? 'Collapse' : 'Expand'}
           >
-            {period.status === 'open' ? 'Open' : 'Closed'}
-          </span>
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+
+          {/* Period Info */}
+          <div className="flex-1">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              {formatDateRange(period.start_date, period.end_date)}
+            </CardTitle>
+            {period.notes && (
+              <CardDescription className="mt-1">{period.notes}</CardDescription>
+            )}
+          </div>
+
+          {/* Status Badges */}
+          <div className="flex items-center gap-2">
+            {settlement?.settled && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">
+                <CheckCircle className="h-3 w-3" />
+                Settled
+              </span>
+            )}
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                period.status === 'open'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
+            >
+              {period.status === 'open' ? 'Open' : 'Closed'}
+            </span>
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 pl-12">
         {/* Summary Stats */}
         {settlementLoading ? (
           <div className="text-sm text-muted-foreground">Loading summary...</div>
         ) : settlement ? (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-4 text-sm">
-              <div>
-                <p className="text-muted-foreground">Caregiver Cost</p>
-                <p className="font-medium">{formatCurrency(settlement.total_caregiver_cost)}</p>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-4 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-muted-foreground">Hours</p>
+                  <p className="font-medium">
+                    {parseFloat(
+                      (
+                        parseFloat(settlement.total_caregiver_cost) /
+                        (settlement.total_caregiver_cost === '0' ? 1 : 25)
+                      ).toFixed(1)
+                    ) || '-'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-muted-foreground">Total Expenses</p>
-                <p className="font-medium">{formatCurrency(settlement.total_expenses)}</p>
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-muted-foreground">Caregiver Cost</p>
+                  <p className="font-medium">{formatCurrency(settlement.total_caregiver_cost)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <p className="text-muted-foreground">Expenses</p>
+                  <p className="font-medium">{formatCurrency(settlement.total_expenses)}</p>
+                </div>
               </div>
               <div>
                 <p className="text-muted-foreground">Settlement</p>
@@ -218,12 +298,15 @@ function PeriodCard({ period, isExpanded, onToggleExpand, onClose, isClosing }: 
 
             {/* Actions */}
             <div className="flex gap-2 pt-2">
-              <Link to={`/?period=${period.id}`}>
-                <Button variant="outline" size="sm">
-                  View Dashboard
-                </Button>
-              </Link>
-              {period.status === 'open' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/periods/${period.id}`)}
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                View Details
+              </Button>
+              {period.status === 'open' ? (
                 <Button
                   variant="default"
                   size="sm"
@@ -231,6 +314,16 @@ function PeriodCard({ period, isExpanded, onToggleExpand, onClose, isClosing }: 
                   disabled={isClosing}
                 >
                   {isClosing ? 'Closing...' : 'Close Period'}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onReopen}
+                  disabled={isReopening}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {isReopening ? 'Reopening...' : 'Reopen'}
                 </Button>
               )}
             </div>
@@ -382,7 +475,7 @@ function ClosePeriodDialog({
         <DialogHeader>
           <DialogTitle>Close Pay Period</DialogTitle>
           <DialogDescription>
-            Are you sure you want to close this pay period? This action cannot be undone.
+            Are you sure you want to close this pay period? You can reopen it later if needed.
           </DialogDescription>
         </DialogHeader>
         {period && (
@@ -414,16 +507,226 @@ function ClosePeriodDialog({
   );
 }
 
+// Reopen Period Confirmation Dialog
+interface ReopenPeriodDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  period: PayPeriod | null;
+  onConfirm: () => void;
+  isReopening: boolean;
+}
+
+function ReopenPeriodDialog({
+  open,
+  onOpenChange,
+  period,
+  onConfirm,
+  isReopening,
+}: ReopenPeriodDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Reopen Pay Period</DialogTitle>
+          <DialogDescription>
+            Are you sure you want to reopen this pay period? This will allow new entries to be added.
+          </DialogDescription>
+        </DialogHeader>
+        {period && (
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Period: <span className="font-medium text-foreground">
+                {formatDateRange(period.start_date, period.end_date)}
+              </span>
+            </p>
+          </div>
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button type="button" variant="outline">
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button
+            type="button"
+            variant="default"
+            onClick={onConfirm}
+            disabled={isReopening}
+          >
+            {isReopening ? 'Reopening...' : 'Reopen Period'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Period Comparison Modal
+interface ComparisonModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  selectedPeriodIds: number[];
+}
+
+function ComparisonModal({ open, onOpenChange, selectedPeriodIds }: ComparisonModalProps) {
+  const { data: comparisonData, isLoading } = usePeriodComparison(
+    open ? selectedPeriodIds : []
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle>Period Comparison</DialogTitle>
+          <DialogDescription>
+            Side-by-side comparison of {selectedPeriodIds.length} selected pay periods
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <p className="text-muted-foreground">Loading comparison data...</p>
+          </div>
+        ) : comparisonData ? (
+          <div className="space-y-4">
+            {/* Comparison Table */}
+            <div className="rounded-md border overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-medium">Period</TableHead>
+                    <TableHead className="text-right">Total Hours</TableHead>
+                    <TableHead className="text-right">Caregiver Cost</TableHead>
+                    <TableHead className="text-right">Expenses</TableHead>
+                    <TableHead className="text-right">Total Cost</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {comparisonData.periods.map((period) => (
+                    <TableRow key={period.period_id}>
+                      <TableCell className="font-medium">
+                        {formatDateRange(period.start_date, period.end_date)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {parseFloat(period.total_hours).toFixed(2)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(period.total_caregiver_cost)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(period.total_expenses)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(period.total_cost)}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            period.status === 'open'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {period.status === 'open' ? 'Open' : 'Closed'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Averages Row */}
+                  <TableRow className="bg-muted/50 font-medium">
+                    <TableCell>Average</TableCell>
+                    <TableCell className="text-right">
+                      {parseFloat(comparisonData.averages.avg_hours).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(comparisonData.averages.avg_caregiver_cost)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(comparisonData.averages.avg_expenses)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(comparisonData.averages.avg_total_cost)}
+                    </TableCell>
+                    <TableCell>-</TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Caregiver Breakdown */}
+            {comparisonData.periods.some(p => p.caregiver_breakdown.length > 0) && (
+              <div>
+                <h4 className="font-medium mb-2">Caregiver Breakdown</h4>
+                <div className="rounded-md border overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Caregiver</TableHead>
+                        <TableHead className="text-right">Hours</TableHead>
+                        <TableHead className="text-right">Cost</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {comparisonData.periods.flatMap((period) =>
+                        period.caregiver_breakdown.map((cg, idx) => (
+                          <TableRow key={`${period.period_id}-${cg.caregiver_id}`}>
+                            {idx === 0 && (
+                              <TableCell
+                                rowSpan={period.caregiver_breakdown.length}
+                                className="font-medium align-top"
+                              >
+                                {formatDateRange(period.start_date, period.end_date)}
+                              </TableCell>
+                            )}
+                            <TableCell>{cg.caregiver_name}</TableCell>
+                            <TableCell className="text-right">
+                              {parseFloat(cg.hours).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(cg.cost)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-muted-foreground text-center py-8">
+            No comparison data available
+          </div>
+        )}
+
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Close</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // Main PayPeriods Component
 export function PayPeriods() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [comparisonModalOpen, setComparisonModalOpen] = useState(false);
   const [periodToClose, setPeriodToClose] = useState<PayPeriod | null>(null);
+  const [periodToReopen, setPeriodToReopen] = useState<PayPeriod | null>(null);
   const [expandedPeriodId, setExpandedPeriodId] = useState<number | null>(null);
+  const [selectedPeriodIds, setSelectedPeriodIds] = useState<number[]>([]);
 
   const { data: periods = [], isLoading, error } = usePayPeriods();
   const createPayPeriod = useCreatePayPeriod();
   const closePeriod = useClosePeriod();
+  const reopenPeriod = useReopenPeriod();
 
   // Sort periods by start date (most recent first)
   const sortedPeriods = useMemo(() => {
@@ -456,6 +759,11 @@ export function PayPeriods() {
     setCloseDialogOpen(true);
   };
 
+  const handleOpenReopenDialog = (period: PayPeriod) => {
+    setPeriodToReopen(period);
+    setReopenDialogOpen(true);
+  };
+
   const handleConfirmClose = async () => {
     if (periodToClose) {
       try {
@@ -468,8 +776,34 @@ export function PayPeriods() {
     }
   };
 
+  const handleConfirmReopen = async () => {
+    if (periodToReopen) {
+      try {
+        await reopenPeriod.mutateAsync(periodToReopen.id);
+        setReopenDialogOpen(false);
+        setPeriodToReopen(null);
+      } catch (err) {
+        console.error('Failed to reopen pay period:', err);
+      }
+    }
+  };
+
   const toggleExpand = (periodId: number) => {
     setExpandedPeriodId((prev) => (prev === periodId ? null : periodId));
+  };
+
+  const togglePeriodSelection = (periodId: number, checked: boolean) => {
+    setSelectedPeriodIds((prev) =>
+      checked ? [...prev, periodId] : prev.filter((id) => id !== periodId)
+    );
+  };
+
+  const selectAllPeriods = () => {
+    setSelectedPeriodIds(sortedPeriods.map((p) => p.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedPeriodIds([]);
   };
 
   // Loading state
@@ -495,14 +829,23 @@ export function PayPeriods() {
       {/* Header Section */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Pay Periods</h1>
-        <Button
-          onClick={() => setCreateDialogOpen(true)}
-          disabled={hasOpenPeriod}
-          title={hasOpenPeriod ? 'Close the current open period before creating a new one' : undefined}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Create Period
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Compare Button */}
+          {selectedPeriodIds.length >= 2 && (
+            <Button variant="outline" onClick={() => setComparisonModalOpen(true)}>
+              <GitCompare className="mr-2 h-4 w-4" />
+              Compare Selected ({selectedPeriodIds.length})
+            </Button>
+          )}
+          <Button
+            onClick={() => setCreateDialogOpen(true)}
+            disabled={hasOpenPeriod}
+            title={hasOpenPeriod ? 'Close the current open period before creating a new one' : undefined}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Create Period
+          </Button>
+        </div>
       </div>
 
       {/* Info about open period restriction */}
@@ -512,6 +855,23 @@ export function PayPeriods() {
             <strong>Note:</strong> Only one pay period can be open at a time. Close the current
             open period before creating a new one.
           </p>
+        </div>
+      )}
+
+      {/* Selection Controls */}
+      {sortedPeriods.length > 0 && (
+        <div className="flex items-center gap-4 text-sm">
+          <span className="text-muted-foreground">
+            {selectedPeriodIds.length} selected
+          </span>
+          <Button variant="link" size="sm" className="h-auto p-0" onClick={selectAllPeriods}>
+            Select all
+          </Button>
+          {selectedPeriodIds.length > 0 && (
+            <Button variant="link" size="sm" className="h-auto p-0" onClick={clearSelection}>
+              Clear selection
+            </Button>
+          )}
         </div>
       )}
 
@@ -540,7 +900,11 @@ export function PayPeriods() {
               isExpanded={expandedPeriodId === period.id}
               onToggleExpand={() => toggleExpand(period.id)}
               onClose={() => handleOpenCloseDialog(period)}
+              onReopen={() => handleOpenReopenDialog(period)}
               isClosing={closePeriod.isPending && periodToClose?.id === period.id}
+              isReopening={reopenPeriod.isPending && periodToReopen?.id === period.id}
+              isSelected={selectedPeriodIds.includes(period.id)}
+              onSelectionChange={(checked) => togglePeriodSelection(period.id, checked)}
             />
           ))}
         </div>
@@ -562,6 +926,22 @@ export function PayPeriods() {
         period={periodToClose}
         onConfirm={handleConfirmClose}
         isClosing={closePeriod.isPending}
+      />
+
+      {/* Reopen Period Confirmation Dialog */}
+      <ReopenPeriodDialog
+        open={reopenDialogOpen}
+        onOpenChange={setReopenDialogOpen}
+        period={periodToReopen}
+        onConfirm={handleConfirmReopen}
+        isReopening={reopenPeriod.isPending}
+      />
+
+      {/* Period Comparison Modal */}
+      <ComparisonModal
+        open={comparisonModalOpen}
+        onOpenChange={setComparisonModalOpen}
+        selectedPeriodIds={selectedPeriodIds}
       />
     </div>
   );
