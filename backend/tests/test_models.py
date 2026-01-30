@@ -9,6 +9,7 @@ from app.core.database import Base
 from app.models.caregiver import Caregiver
 from app.models.pay_period import PayPeriod, PeriodStatus
 from app.models.time_entry import TimeEntry
+from app.models.expense import Expense, Payer, ExpenseCategory
 
 
 @pytest.fixture
@@ -88,3 +89,33 @@ def test_create_time_entry(db_session):
     assert entry.hours == Decimal("12.00")
     assert entry.total_pay == Decimal("180.00")
     assert entry.created_at is not None
+
+
+def test_create_expense(db_session):
+    period = PayPeriod(
+        start_date=date(2026, 1, 13),
+        end_date=date(2026, 1, 26),
+        status=PeriodStatus.OPEN
+    )
+    db_session.add(period)
+    db_session.commit()
+
+    expense = Expense(
+        pay_period_id=period.id,
+        date=date(2026, 1, 15),
+        description="Walmart groceries",
+        amount=Decimal("209.71"),
+        paid_by=Payer.RAFI,
+        category=ExpenseCategory.GROCERIES
+    )
+    db_session.add(expense)
+    db_session.commit()
+    db_session.refresh(expense)
+
+    assert expense.id is not None
+    assert expense.amount == Decimal("209.71")
+    assert expense.paid_by == Payer.RAFI
+    assert expense.category == ExpenseCategory.GROCERIES
+    assert expense.is_recurring is False
+    assert expense.date_estimated is False
+    assert expense.created_at is not None
