@@ -5,6 +5,7 @@ import {
   DollarSign,
   Users,
   Calendar,
+  Upload,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +15,7 @@ const navItems = [
   { to: '/expenses', icon: DollarSign, label: 'Expenses' },
   { to: '/caregivers', icon: Users, label: 'Caregivers' },
   { to: '/periods', icon: Calendar, label: 'Pay Periods' },
+  { to: '/import', icon: Upload, label: 'Import Data' },
 ]
 
 export function Sidebar() {

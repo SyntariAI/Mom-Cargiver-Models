@@ -5,6 +5,7 @@ import { TimeEntries } from '@/pages/TimeEntries'
 import { Expenses } from '@/pages/Expenses'
 import { Caregivers } from '@/pages/Caregivers'
 import { PayPeriods } from '@/pages/PayPeriods'
+import { Import } from '@/pages/Import'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/caregivers" element={<Caregivers />} />
         <Route path="/periods" element={<PayPeriods />} />
+        <Route path="/import" element={<Import />} />
       </Route>
     </Routes>
   )
