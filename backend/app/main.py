@@ -1,12 +1,24 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.database import Base, engine, import_models
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Import models and create tables on startup
+    import_models()
+    Base.metadata.create_all(bind=engine)
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Caregiver hours and expense tracking API",
     version="0.1.0",
+    lifespan=lifespan
 )
 
 app.add_middleware(

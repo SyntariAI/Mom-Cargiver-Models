@@ -26,3 +26,10 @@ def get_db():
         raise
     finally:
         db.close()
+
+
+# Import models so they register with Base.metadata
+def import_models():
+    from app.models import (
+        Caregiver, PayPeriod, TimeEntry, Expense, Settlement
+    )
