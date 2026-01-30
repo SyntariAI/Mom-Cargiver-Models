@@ -106,10 +106,17 @@ start_dev() {
     fi
 
     # Activate venv and install dependencies
-    print_status "Installing backend dependencies..."
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
-    pip install -q -r requirements.txt
+
+    # Check if dependencies need to be installed
+    if ! pip show fastapi > /dev/null 2>&1; then
+        print_status "Installing backend dependencies (first time setup)..."
+        pip install -q -r requirements.txt
+        print_status "Dependencies installed"
+    else
+        print_status "Backend dependencies already installed"
+    fi
 
     # Install frontend dependencies if needed
     if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
@@ -122,7 +129,7 @@ start_dev() {
     print_status "Starting backend server..."
     cd "$SCRIPT_DIR/backend"
     source venv/bin/activate
-    uvicorn app.main:app --reload --port 8000 --reload-exclude 'venv/*' &
+    uvicorn app.main:app --reload --port 8000 --reload-dir app &
     BACKEND_PID=$!
     echo $BACKEND_PID > "$SCRIPT_DIR/.backend.pid"
 
