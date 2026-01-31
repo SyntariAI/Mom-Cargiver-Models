@@ -81,69 +81,45 @@ export interface ExpenseSummary {
 // Analytics Types
 // ============================================================================
 
-export interface MonthlyTrendDataPoint {
+// Backend returns arrays directly for these endpoints
+export interface MonthlyTrendItem {
   month: string;
-  year: number;
   total_hours: string;
   total_caregiver_cost: string;
   total_expenses: string;
-  total_cost: string;
 }
 
-export interface MonthlyTrendResponse {
-  data: MonthlyTrendDataPoint[];
-  period: {
-    start_date: string;
-    end_date: string;
-  };
-}
+// Alias for backward compatibility
+export type MonthlyTrendResponse = MonthlyTrendItem[];
 
 export interface CaregiverBreakdownItem {
   caregiver_id: number;
   caregiver_name: string;
   total_hours: string;
-  total_pay: string;
-  percentage_of_hours: number;
-  percentage_of_cost: number;
+  total_cost: string;
   entry_count: number;
 }
 
-export interface CaregiverBreakdownResponse {
-  data: CaregiverBreakdownItem[];
-  totals: {
-    total_hours: string;
-    total_cost: string;
-  };
-  period_id?: number;
-}
+// Alias for backward compatibility
+export type CaregiverBreakdownResponse = CaregiverBreakdownItem[];
 
 export interface ExpenseCategoryItem {
-  category: ExpenseCategory;
+  category: string;
   total_amount: string;
-  percentage: number;
-  count: number;
+  expense_count: number;
 }
 
-export interface ExpenseCategoriesResponse {
-  data: ExpenseCategoryItem[];
-  totals: {
-    total_amount: string;
-    total_count: number;
-  };
-  period_id?: number;
-}
+// Alias for backward compatibility
+export type ExpenseCategoriesResponse = ExpenseCategoryItem[];
 
 export interface AllTimeSummary {
-  total_periods: number;
   total_hours: string;
   total_caregiver_cost: string;
   total_expenses: string;
-  total_cost: string;
-  average_monthly_cost: string;
-  first_period_date: string | null;
-  last_period_date: string | null;
-  active_caregivers: number;
-  total_caregivers: number;
+  period_count: number;
+  avg_hours_per_period: string;
+  avg_caregiver_cost_per_period: string;
+  avg_expenses_per_period: string;
 }
 
 export interface PeriodComparisonItem {

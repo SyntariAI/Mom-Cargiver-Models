@@ -112,22 +112,22 @@ export function Dashboard() {
   const recentTimeEntries = timeEntries?.slice(-5).reverse() ?? [];
   const recentExpenses = allExpenses?.slice(-5).reverse() ?? [];
 
-  // Prepare chart data
-  const monthlyTrendData = monthlyTrend?.data.map((item) => ({
-    month: `${item.month} ${item.year}`,
+  // Prepare chart data - API returns arrays directly, not { data: [...] }
+  const monthlyTrendData = (Array.isArray(monthlyTrend) ? monthlyTrend : []).map((item) => ({
+    month: item.month,
     caregiver_cost: parseFloat(item.total_caregiver_cost),
     expenses: parseFloat(item.total_expenses),
-  })) ?? [];
+  }));
 
-  const caregiverPieData = caregiverBreakdown?.data.map((item) => ({
+  const caregiverPieData = (Array.isArray(caregiverBreakdown) ? caregiverBreakdown : []).map((item) => ({
     name: item.caregiver_name,
     value: parseFloat(item.total_hours),
-  })) ?? [];
+  }));
 
-  const expenseCategoryData = expenseCategories?.data.map((item) => ({
+  const expenseCategoryData = (Array.isArray(expenseCategories) ? expenseCategories : []).map((item) => ({
     category: item.category,
     amount: parseFloat(item.total_amount),
-  })) ?? [];
+  }));
 
   const contributionsData = [
     { name: 'Adi', amount: adiExpenses },
@@ -135,7 +135,8 @@ export function Dashboard() {
   ];
 
   // Calculate trend comparison (current period vs previous month)
-  const previousMonthData = monthlyTrend?.data[monthlyTrend.data.length - 2];
+  const trendArray = Array.isArray(monthlyTrend) ? monthlyTrend : [];
+  const previousMonthData = trendArray.length >= 2 ? trendArray[trendArray.length - 2] : null;
   const previousCaregiverCost = previousMonthData ? parseFloat(previousMonthData.total_caregiver_cost) : 0;
 
   const handleMarkSettled = () => {
@@ -285,11 +286,7 @@ export function Dashboard() {
       <Card>
         <CardHeader>
           <CardTitle>All-Time Summary</CardTitle>
-          <CardDescription>
-            {allTimeSummary?.first_period_date && allTimeSummary?.last_period_date
-              ? `From ${formatDate(allTimeSummary.first_period_date)} to ${formatDate(allTimeSummary.last_period_date)}`
-              : 'Lifetime statistics'}
-          </CardDescription>
+          <CardDescription>Lifetime statistics</CardDescription>
         </CardHeader>
         <CardContent>
           {summaryLoading ? (
@@ -301,18 +298,18 @@ export function Dashboard() {
                 <p className="text-2xl font-bold">{formatHours(allTimeSummary.total_hours)}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Total Cost</p>
-                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.total_cost)}</p>
+                <p className="text-sm text-muted-foreground">Total Caregiver Cost</p>
+                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.total_caregiver_cost)}</p>
               </div>
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Avg Monthly Cost</p>
-                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.average_monthly_cost)}</p>
+                <p className="text-sm text-muted-foreground">Total Expenses</p>
+                <p className="text-2xl font-bold">{formatCurrency(allTimeSummary.total_expenses)}</p>
               </div>
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Pay Periods</p>
-                <p className="text-2xl font-bold">{allTimeSummary.total_periods}</p>
+                <p className="text-2xl font-bold">{allTimeSummary.period_count}</p>
                 <p className="text-xs text-muted-foreground">
-                  {allTimeSummary.active_caregivers} active / {allTimeSummary.total_caregivers} total caregivers
+                  Avg {formatCurrency(allTimeSummary.avg_caregiver_cost_per_period)}/period
                 </p>
               </div>
             </div>
@@ -464,11 +461,11 @@ export function Dashboard() {
           <CardContent>
             {breakdownLoading ? (
               <ChartSkeleton height={200} />
-            ) : caregiverBreakdown?.data && caregiverBreakdown.data.length > 0 ? (
+            ) : caregiverPieData.length > 0 ? (
               <BarChart
-                data={caregiverBreakdown.data.map((item) => ({
+                data={(Array.isArray(caregiverBreakdown) ? caregiverBreakdown : []).map((item) => ({
                   name: item.caregiver_name,
-                  cost: parseFloat(item.total_pay),
+                  cost: parseFloat(item.total_cost),
                 }))}
                 xAxisDataKey="name"
                 height={200}
