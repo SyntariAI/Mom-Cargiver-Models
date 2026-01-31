@@ -121,16 +121,13 @@ def reopen_pay_period(period_id: int, db: Session = Depends(get_db)):
             detail="Period is already open"
         )
 
-    # Check if there's already another open period
+    # Auto-close any existing open period (swap behavior)
     existing_open = db.query(PayPeriod).filter(
         PayPeriod.status == PeriodStatus.OPEN,
         PayPeriod.id != period_id
     ).first()
     if existing_open:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="There is already an open period. Close it before reopening this one."
-        )
+        existing_open.status = PeriodStatus.CLOSED
 
     # If period was settled, also unsettle it
     settlement = db.query(Settlement).filter(
