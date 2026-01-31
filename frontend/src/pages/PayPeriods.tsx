@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { format, addDays, parseISO } from 'date-fns';
+import { format, addDays, parseISO, getYear, getMonth } from 'date-fns';
 import {
   Plus,
   Calendar,
@@ -14,6 +14,9 @@ import {
   DollarSign,
   Receipt,
   CheckCircle,
+  ArrowUp,
+  ArrowDown,
+  Filter,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -46,6 +49,13 @@ import {
 } from '@/components/ui/table';
 
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   usePayPeriods,
   useCreatePayPeriod,
   useClosePeriod,
@@ -53,6 +63,7 @@ import {
   useSettlement,
 } from '@/hooks/use-api';
 import { usePeriodComparison } from '@/hooks/use-analytics';
+import { useToast } from '@/hooks/use-toast';
 import type { PayPeriod } from '@/types';
 
 // Helper function to format currency
@@ -723,17 +734,67 @@ export function PayPeriods() {
   const [expandedPeriodId, setExpandedPeriodId] = useState<number | null>(null);
   const [selectedPeriodIds, setSelectedPeriodIds] = useState<number[]>([]);
 
+  // Sorting and filtering state
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [filterYear, setFilterYear] = useState<string>('all');
+  const [filterMonth, setFilterMonth] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
   const { data: periods = [], isLoading, error } = usePayPeriods();
   const createPayPeriod = useCreatePayPeriod();
   const closePeriod = useClosePeriod();
   const reopenPeriod = useReopenPeriod();
+  const { toast } = useToast();
 
-  // Sort periods by start date (most recent first)
-  const sortedPeriods = useMemo(() => {
-    return [...periods].sort(
-      (a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
-    );
+  // Get unique years from periods for filter dropdown
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    periods.forEach((p) => {
+      years.add(getYear(parseISO(p.start_date)));
+    });
+    return Array.from(years).sort((a, b) => b - a);
   }, [periods]);
+
+  // Month names for filter
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  // Filter and sort periods
+  const sortedPeriods = useMemo(() => {
+    let filtered = [...periods];
+
+    // Filter by year
+    if (filterYear !== 'all') {
+      const year = parseInt(filterYear);
+      filtered = filtered.filter((p) => getYear(parseISO(p.start_date)) === year);
+    }
+
+    // Filter by month
+    if (filterMonth !== 'all') {
+      const month = parseInt(filterMonth);
+      filtered = filtered.filter((p) => getMonth(parseISO(p.start_date)) === month);
+    }
+
+    // Filter by status
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter((p) => p.status === filterStatus);
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.start_date).getTime();
+      const dateB = new Date(b.start_date).getTime();
+      return sortDirection === 'desc' ? dateB - dateA : dateA - dateB;
+    });
+
+    return filtered;
+  }, [periods, filterYear, filterMonth, filterStatus, sortDirection]);
+
+  const toggleSortDirection = () => {
+    setSortDirection((prev) => (prev === 'desc' ? 'asc' : 'desc'));
+  };
 
   // Check if there's an open period
   const hasOpenPeriod = useMemo(() => {
@@ -770,8 +831,20 @@ export function PayPeriods() {
         await closePeriod.mutateAsync(periodToClose.id);
         setCloseDialogOpen(false);
         setPeriodToClose(null);
-      } catch (err) {
+        toast({
+          title: 'Period Closed',
+          description: 'The pay period has been closed successfully.',
+        });
+      } catch (err: any) {
         console.error('Failed to close pay period:', err);
+        const errorMessage = err?.response?.data?.detail || 'Failed to close pay period. Please try again.';
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        setCloseDialogOpen(false);
+        setPeriodToClose(null);
       }
     }
   };
@@ -782,8 +855,20 @@ export function PayPeriods() {
         await reopenPeriod.mutateAsync(periodToReopen.id);
         setReopenDialogOpen(false);
         setPeriodToReopen(null);
-      } catch (err) {
+        toast({
+          title: 'Period Reopened',
+          description: 'The pay period has been reopened successfully.',
+        });
+      } catch (err: any) {
         console.error('Failed to reopen pay period:', err);
+        const errorMessage = err?.response?.data?.detail || 'Failed to reopen pay period. Please try again.';
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        setReopenDialogOpen(false);
+        setPeriodToReopen(null);
       }
     }
   };
@@ -857,6 +942,76 @@ export function PayPeriods() {
           </p>
         </div>
       )}
+
+      {/* Filter and Sort Controls */}
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-muted/50 rounded-lg">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Filters:</span>
+        </div>
+
+        {/* Year Filter */}
+        <Select value={filterYear} onValueChange={setFilterYear}>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue placeholder="Year" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Years</SelectItem>
+            {availableYears.map((year) => (
+              <SelectItem key={year} value={year.toString()}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Month Filter */}
+        <Select value={filterMonth} onValueChange={setFilterMonth}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue placeholder="Month" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Months</SelectItem>
+            {monthNames.map((month, index) => (
+              <SelectItem key={month} value={index.toString()}>
+                {month}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Status Filter */}
+        <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Sort Toggle */}
+        <Button variant="outline" size="sm" onClick={toggleSortDirection} className="ml-auto">
+          {sortDirection === 'desc' ? (
+            <>
+              <ArrowDown className="mr-2 h-4 w-4" />
+              Newest First
+            </>
+          ) : (
+            <>
+              <ArrowUp className="mr-2 h-4 w-4" />
+              Oldest First
+            </>
+          )}
+        </Button>
+
+        {/* Results Count */}
+        <span className="text-sm text-muted-foreground">
+          {sortedPeriods.length} of {periods.length} periods
+        </span>
+      </div>
 
       {/* Selection Controls */}
       {sortedPeriods.length > 0 && (
