@@ -16,7 +16,7 @@ import {
 // Types
 // ============================================================================
 
-export type EditableCellType = "text" | "number" | "date" | "select"
+export type EditableCellType = "text" | "number" | "date" | "time" | "select"
 
 export interface SelectOption {
   value: string

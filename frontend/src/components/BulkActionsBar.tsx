@@ -1,10 +1,12 @@
-import { X, Trash2, Edit } from 'lucide-react';
+import { X, Trash2, Edit, Copy, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface BulkActionsBarProps {
   selectedCount: number;
   onDelete: () => void;
   onUpdate: () => void;
+  onDuplicate?: () => void;
+  onCopyToDateRange?: () => void;
   onClearSelection: () => void;
   itemLabel?: string;
 }
@@ -13,6 +15,8 @@ export function BulkActionsBar({
   selectedCount,
   onDelete,
   onUpdate,
+  onDuplicate,
+  onCopyToDateRange,
   onClearSelection,
   itemLabel = 'item',
 }: BulkActionsBarProps) {
@@ -38,6 +42,28 @@ export function BulkActionsBar({
             <Edit className="h-4 w-4" />
             Update Selected
           </Button>
+          {onDuplicate && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onDuplicate}
+              className="gap-2"
+            >
+              <Copy className="h-4 w-4" />
+              Duplicate
+            </Button>
+          )}
+          {onCopyToDateRange && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCopyToDateRange}
+              className="gap-2"
+            >
+              <CalendarRange className="h-4 w-4" />
+              Copy to Dates
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

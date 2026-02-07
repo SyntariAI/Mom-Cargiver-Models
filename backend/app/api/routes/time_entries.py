@@ -106,12 +106,67 @@ def create_time_entry(entry: TimeEntryCreate, db: Session = Depends(get_db)):
     return response
 
 
+def _create_single_entry(entry: TimeEntryCreate, db: Session) -> TimeEntry:
+    """Create a single time entry without committing. Used by both single and bulk create."""
+    caregiver = db.query(Caregiver).filter(Caregiver.id == entry.caregiver_id).first()
+    if not caregiver:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Caregiver {entry.caregiver_id} not found"
+        )
+
+    if entry.pay_period_id:
+        period = db.query(PayPeriod).filter(PayPeriod.id == entry.pay_period_id).first()
+        if not period:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pay period not found"
+            )
+    else:
+        period = db.query(PayPeriod).filter(
+            PayPeriod.start_date <= entry.date,
+            PayPeriod.end_date >= entry.date
+        ).first()
+        if not period:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No pay period found for date {entry.date}"
+            )
+
+    total_pay = calculate_total_pay(entry.hours, entry.hourly_rate)
+
+    db_entry = TimeEntry(
+        pay_period_id=period.id,
+        caregiver_id=entry.caregiver_id,
+        date=entry.date,
+        time_in=entry.time_in,
+        time_out=entry.time_out,
+        hours=entry.hours,
+        hourly_rate=entry.hourly_rate,
+        total_pay=total_pay,
+        notes=entry.notes
+    )
+    db.add(db_entry)
+    return db_entry
+
+
 @router.post("/bulk", response_model=list[TimeEntryResponse], status_code=status.HTTP_201_CREATED)
 def create_time_entries_bulk(bulk: TimeEntryBulkCreate, db: Session = Depends(get_db)):
+    """Create multiple time entries atomically."""
+    db_entries = []
+    for entry_data in bulk.entries:
+        db_entry = _create_single_entry(entry_data, db)
+        db_entries.append(db_entry)
+
+    db.commit()
+    for entry in db_entries:
+        db.refresh(entry)
+
     results = []
-    for entry in bulk.entries:
-        result = create_time_entry(entry, db)
-        results.append(result)
+    for entry in db_entries:
+        response = TimeEntryResponse.model_validate(entry).model_dump()
+        response["caregiver_name"] = entry.caregiver.name
+        results.append(response)
     return results
 
 

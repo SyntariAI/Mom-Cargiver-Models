@@ -67,6 +67,8 @@ export const timeEntries = {
     api.post<{ deleted_count: number }>('/api/time-entries/bulk-delete', { ids }).then((r) => r.data),
   bulkUpdate: (ids: number[], updates: Partial<TimeEntry>) =>
     api.post<{ updated_count: number }>('/api/time-entries/bulk-update', { ids, updates }).then((r) => r.data),
+  bulkCreate: (entries: Partial<TimeEntry>[]) =>
+    api.post<TimeEntry[]>('/api/time-entries/bulk', { entries }).then((r) => r.data),
 };
 
 // Expenses

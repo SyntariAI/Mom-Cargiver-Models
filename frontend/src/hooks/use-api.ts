@@ -213,6 +213,17 @@ export function useBulkUpdateTimeEntries() {
   });
 }
 
+export function useBulkCreateTimeEntries() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (entries: Partial<TimeEntry>[]) => timeEntries.bulkCreate(entries),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['timeEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['settlements'] });
+    },
+  });
+}
+
 // ============================================================================
 // Expenses
 // ============================================================================

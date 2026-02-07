@@ -45,18 +45,16 @@ import {
   useUnsettle,
 } from '@/hooks/use-api';
 import type { TimeEntry, Expense } from '@/types';
+import {
+  decimalToHoursMinutes,
+  formatTimeTo12Hour,
+  formatCurrency,
+  formatDisplayDate,
+} from '@/lib/time-utils';
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-function formatCurrency(amount: string | number): string {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(num);
-}
 
 function formatDateRange(startDate: string, endDate: string): string {
   const start = parseISO(startDate);
@@ -66,18 +64,8 @@ function formatDateRange(startDate: string, endDate: string): string {
   return `${startFormat} - ${endFormat}`;
 }
 
-function formatDate(dateStr: string): string {
-  return format(new Date(dateStr), 'MMM d, yyyy');
-}
-
-function formatTime(time: string | null): string {
-  if (!time) return '-';
-  const [hours, minutes] = time.split(':');
-  const hour = parseInt(hours, 10);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minutes} ${ampm}`;
-}
+const formatDate = formatDisplayDate;
+const formatTime = formatTimeTo12Hour;
 
 // ============================================================================
 // Tab Button Component
@@ -227,7 +215,7 @@ export function PeriodDetail() {
         accessorKey: 'hours',
         header: createSortableHeader('Hours'),
         cell: ({ row }) => (
-          <div className="text-right">{row.getValue('hours')}</div>
+          <div className="text-right">{decimalToHoursMinutes(row.getValue('hours') as string)}</div>
         ),
       },
       {
@@ -303,7 +291,7 @@ export function PeriodDetail() {
       <div className="flex items-center gap-8">
         <div>
           <span className="text-muted-foreground">Hours:</span>{' '}
-          <span className="font-medium">{totalHours.toFixed(2)}</span>
+          <span className="font-medium">{decimalToHoursMinutes(totalHours)}</span>
         </div>
         <div>
           <span className="text-muted-foreground">Pay:</span>{' '}
@@ -383,7 +371,7 @@ export function PeriodDetail() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalHours.toFixed(2)}</div>
+            <div className="text-2xl font-bold">{decimalToHoursMinutes(totalHours)}</div>
             <p className="text-xs text-muted-foreground">{timeEntries.length} entries</p>
           </CardContent>
         </Card>

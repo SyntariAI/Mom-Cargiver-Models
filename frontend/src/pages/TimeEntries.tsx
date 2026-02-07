@@ -1,9 +1,9 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format, isWithinInterval, parseISO } from 'date-fns';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Copy, ChevronDown } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
 import { Button } from '@/components/ui/button';
@@ -38,7 +38,17 @@ import { DateRangePicker, type DateRangeValue } from '@/components/filters/DateR
 import { MultiSelect, type MultiSelectOption } from '@/components/filters/MultiSelect';
 import { EditableCell, type SelectOption } from '@/components/ui/editable-cell';
 import { EditDialog, type FieldConfig } from '@/components/EditDialog';
+import { HoursInput } from '@/components/ui/hours-input';
 import { useToast } from '@/hooks/use-toast';
+import { useTimeCalculation } from '@/hooks/use-time-calculation';
+import {
+  decimalToHoursMinutes,
+  formatTimeTo12Hour,
+  formatCurrency,
+  formatDisplayDate,
+  calculateHoursBetween,
+} from '@/lib/time-utils';
+import { validateTimeEntries } from '@/lib/time-validation';
 
 import {
   useTimeEntries,
@@ -49,7 +59,10 @@ import {
   useDeleteTimeEntry,
   useBulkDeleteTimeEntries,
   useBulkUpdateTimeEntries,
+  useBulkCreateTimeEntries,
 } from '@/hooks/use-api';
+import { BulkEntryForm, type BulkEntryRow } from '@/components/time-entries/BulkEntryForm';
+import { CopyToDateRangeDialog } from '@/components/time-entries/CopyToDateRangeDialog';
 import { BulkActionsBar } from '@/components/BulkActionsBar';
 import { BulkDeleteDialog } from '@/components/BulkDeleteDialog';
 import { BulkUpdateTimeEntriesDialog } from '@/components/BulkUpdateTimeEntriesDialog';
@@ -79,6 +92,7 @@ interface TimeEntryDialogProps {
 function TimeEntryDialog({ entry, caregivers, periodId, onClose }: TimeEntryDialogProps) {
   const createTimeEntry = useCreateTimeEntry();
   const updateTimeEntry = useUpdateTimeEntry();
+  const { calculateFromTimes, setManualHours, isManualOverride } = useTimeCalculation();
 
   const activeCaregivers = caregivers.filter((c) => c.is_active);
 
@@ -100,6 +114,18 @@ function TimeEntryDialog({ entry, caregivers, periodId, onClose }: TimeEntryDial
       notes: entry?.notes || '',
     },
   });
+
+  // Auto-calculate hours when time_in and time_out change
+  const watchTimeIn = form.watch('time_in');
+  const watchTimeOut = form.watch('time_out');
+
+  useEffect(() => {
+    if (isManualOverride) return;
+    const calculated = calculateFromTimes(watchTimeIn, watchTimeOut);
+    if (calculated) {
+      form.setValue('hours', calculated);
+    }
+  }, [watchTimeIn, watchTimeOut, isManualOverride, calculateFromTimes, form]);
 
   const onSubmit = async (values: TimeEntryFormValues) => {
     const data = {
@@ -217,12 +243,14 @@ function TimeEntryDialog({ entry, caregivers, periodId, onClose }: TimeEntryDial
               <FormItem>
                 <FormLabel>Hours</FormLabel>
                 <FormControl>
-                  <Input
-                    type="number"
-                    step="0.25"
-                    min="0"
-                    placeholder="8"
-                    {...field}
+                  <HoursInput
+                    value={field.value}
+                    onChange={(val) => {
+                      field.onChange(val);
+                      setManualHours();
+                    }}
+                    isAutoCalculated={!isManualOverride && !!watchTimeIn && !!watchTimeOut}
+                    onManualEdit={setManualHours}
                   />
                 </FormControl>
                 <FormMessage />
@@ -291,27 +319,9 @@ function TimeEntryDialog({ entry, caregivers, periodId, onClose }: TimeEntryDial
   );
 }
 
-// Helper functions
-const formatTime = (time: string | null) => {
-  if (!time) return '-';
-  const [hours, minutes] = time.split(':');
-  const hour = parseInt(hours, 10);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minutes} ${ampm}`;
-};
-
-const formatCurrency = (amount: string | number) => {
-  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(num);
-};
-
-const formatDate = (dateStr: string) => {
-  return format(new Date(dateStr), 'MMM d, yyyy');
-};
+// Helper aliases using shared utilities
+const formatTime = formatTimeTo12Hour;
+const formatDate = formatDisplayDate;
 
 // Edit Dialog Schema
 const editTimeEntrySchema = z.object({
@@ -340,6 +350,9 @@ export function TimeEntries() {
   const [selectedRows, setSelectedRows] = useState<TimeEntry[]>([]);
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [bulkUpdateDialogOpen, setBulkUpdateDialogOpen] = useState(false);
+  const [bulkEntryOpen, setBulkEntryOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [copyToDateRangeOpen, setCopyToDateRangeOpen] = useState(false);
 
   // Filter states
   const [dateRange, setDateRange] = useState<DateRangeValue>({ from: undefined, to: undefined });
@@ -350,10 +363,12 @@ export function TimeEntries() {
   const { data: periods = [] } = usePayPeriods();
   const { data: caregivers = [] } = useCaregivers();
   const { data: entries = [], isLoading } = useTimeEntries(selectedPeriodId);
+  const createTimeEntry = useCreateTimeEntry();
   const deleteTimeEntry = useDeleteTimeEntry();
   const updateTimeEntry = useUpdateTimeEntry();
   const bulkDeleteTimeEntries = useBulkDeleteTimeEntries();
   const bulkUpdateTimeEntries = useBulkUpdateTimeEntries();
+  const bulkCreateTimeEntries = useBulkCreateTimeEntries();
   const { toast } = useToast();
 
   // Caregiver options for multi-select and inline editing
@@ -454,6 +469,16 @@ export function TimeEntries() {
     );
   }, [filteredEntries]);
 
+  // Validation warnings
+  const validationWarnings = useMemo(() => {
+    if (filteredEntries.length === 0) return [];
+    const warnings = validateTimeEntries(filteredEntries);
+    // Only show unique warnings (deduplicate by type per entry)
+    return warnings.filter((w) => w.severity === 'warning');
+  }, [filteredEntries]);
+
+  const [showWarnings, setShowWarnings] = useState(true);
+
   const handleEditDialog = (entry: TimeEntry) => {
     setEditDialogEntry(entry);
     setEditDialogOpen(true);
@@ -490,6 +515,35 @@ export function TimeEntries() {
     setEditingEntry(undefined);
   };
 
+  // Duplicate a single row
+  const handleDuplicateRow = useCallback(async (entry: TimeEntry) => {
+    try {
+      await createTimeEntry.mutateAsync({
+        pay_period_id: entry.pay_period_id,
+        caregiver_id: entry.caregiver_id,
+        date: entry.date,
+        time_in: entry.time_in,
+        time_out: entry.time_out,
+        hours: entry.hours,
+        hourly_rate: entry.hourly_rate,
+        notes: entry.notes,
+      });
+      toast({
+        title: 'Duplicated',
+        description: 'Time entry duplicated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to duplicate time entry.',
+        variant: 'destructive',
+      });
+    }
+  }, [createTimeEntry, toast]);
+
+  // Open bulk entry form pre-populated with selected rows (for copy-to-date-range)
+  const [bulkEntryInitialRows, setBulkEntryInitialRows] = useState<Partial<BulkEntryRow>[]>([]);
+
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
     setSelectedCaregivers([]);
@@ -513,6 +567,44 @@ export function TimeEntries() {
     setRowSelection({});
     setSelectedRows([]);
   }, []);
+
+  // Bulk duplicate selected rows
+  const handleBulkDuplicate = useCallback(async () => {
+    const entriesToCreate = selectedRows.map((row) => ({
+      pay_period_id: row.pay_period_id,
+      caregiver_id: row.caregiver_id,
+      date: row.date,
+      time_in: row.time_in,
+      time_out: row.time_out,
+      hours: row.hours,
+      hourly_rate: row.hourly_rate,
+      notes: row.notes,
+    }));
+    try {
+      await bulkCreateTimeEntries.mutateAsync(entriesToCreate);
+      clearRowSelection();
+      toast({
+        title: 'Duplicated',
+        description: `Duplicated ${entriesToCreate.length} time ${entriesToCreate.length === 1 ? 'entry' : 'entries'}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to duplicate time entries.',
+        variant: 'destructive',
+      });
+    }
+  }, [selectedRows, bulkCreateTimeEntries, clearRowSelection, toast]);
+
+  const handleCopyToDateRange = useCallback(() => {
+    setCopyToDateRangeOpen(true);
+  }, []);
+
+  const handleCopyToDateRangeGenerate = useCallback((rows: Partial<BulkEntryRow>[]) => {
+    setBulkEntryInitialRows(rows);
+    setBulkEntryOpen(true);
+    clearRowSelection();
+  }, [clearRowSelection]);
 
   const handleBulkDelete = async () => {
     const ids = selectedRows.map((row) => row.id);
@@ -684,12 +776,48 @@ export function TimeEntries() {
       {
         accessorKey: 'time_in',
         header: 'Time In',
-        cell: ({ row }) => formatTime(row.getValue('time_in')),
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <EditableCell
+              value={entry.time_in || ''}
+              displayValue={formatTime(entry.time_in)}
+              type="time"
+              onSave={async (value) => {
+                await handleInlineUpdate(entry.id, 'time_in', value);
+                // Auto-calculate hours if both times exist
+                if (value && entry.time_out) {
+                  const hours = calculateHoursBetween(value, entry.time_out);
+                  if (hours) await handleInlineUpdate(entry.id, 'hours', hours);
+                }
+              }}
+              placeholder="-"
+            />
+          );
+        },
       },
       {
         accessorKey: 'time_out',
         header: 'Time Out',
-        cell: ({ row }) => formatTime(row.getValue('time_out')),
+        cell: ({ row }) => {
+          const entry = row.original;
+          return (
+            <EditableCell
+              value={entry.time_out || ''}
+              displayValue={formatTime(entry.time_out)}
+              type="time"
+              onSave={async (value) => {
+                await handleInlineUpdate(entry.id, 'time_out', value);
+                // Auto-calculate hours if both times exist
+                if (entry.time_in && value) {
+                  const hours = calculateHoursBetween(entry.time_in, value);
+                  if (hours) await handleInlineUpdate(entry.id, 'hours', hours);
+                }
+              }}
+              placeholder="-"
+            />
+          );
+        },
       },
       {
         accessorKey: 'hours',
@@ -700,6 +828,7 @@ export function TimeEntries() {
             <div className="text-right">
               <EditableCell
                 value={entry.hours}
+                displayValue={decimalToHoursMinutes(entry.hours)}
                 type="number"
                 step="0.25"
                 min="0"
@@ -743,7 +872,15 @@ export function TimeEntries() {
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => (
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleDuplicateRow(row.original)}
+              title="Duplicate entry"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -756,6 +893,7 @@ export function TimeEntries() {
               variant="ghost"
               size="icon"
               onClick={() => handleDeleteClick(row.original)}
+              title="Delete entry"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -765,7 +903,7 @@ export function TimeEntries() {
         enableHiding: false,
       },
     ],
-    [activeCaregiverOptions, getCaregiverName, handleInlineUpdate]
+    [activeCaregiverOptions, getCaregiverName, handleInlineUpdate, entries]
   );
 
   // Footer content for totals
@@ -775,7 +913,7 @@ export function TimeEntries() {
       <div className="flex items-center gap-8">
         <div>
           <span className="text-muted-foreground">Hours:</span>{' '}
-          <span className="font-medium">{totals.hours.toFixed(2)}</span>
+          <span className="font-medium">{decimalToHoursMinutes(totals.hours)}</span>
         </div>
         <div>
           <span className="text-muted-foreground">Pay:</span>{' '}
@@ -812,33 +950,72 @@ export function TimeEntries() {
             </SelectContent>
           </Select>
 
-          {/* Add Entry Button */}
-          <Dialog open={dialogOpen} onOpenChange={(open) => {
-            if (!open) handleDialogClose();
-            else setDialogOpen(true);
-          }}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Entry
+          {/* Add Entry Split Button */}
+          <div className="relative">
+            <div className="flex">
+              <Dialog open={dialogOpen} onOpenChange={(open) => {
+                if (!open) handleDialogClose();
+                else setDialogOpen(true);
+              }}>
+                <DialogTrigger asChild>
+                  <Button className="rounded-r-none">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Entry
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>
+                      {editingEntry ? 'Edit Time Entry' : 'Add Time Entry'}
+                    </DialogTitle>
+                  </DialogHeader>
+                  <TimeEntryDialog
+                    entry={editingEntry}
+                    caregivers={caregivers}
+                    periodId={selectedPeriodId}
+                    onClose={handleDialogClose}
+                  />
+                </DialogContent>
+              </Dialog>
+              <Button
+                type="button"
+                className="rounded-l-none border-l border-primary-foreground/20 px-2"
+                onClick={() => setAddMenuOpen(!addMenuOpen)}
+              >
+                <ChevronDown className="h-4 w-4" />
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
-                  {editingEntry ? 'Edit Time Entry' : 'Add Time Entry'}
-                </DialogTitle>
-              </DialogHeader>
-              <TimeEntryDialog
-                entry={editingEntry}
-                caregivers={caregivers}
-                periodId={selectedPeriodId}
-                onClose={handleDialogClose}
-              />
-            </DialogContent>
-          </Dialog>
+            </div>
+            {addMenuOpen && (
+              <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-md border bg-popover p-1 shadow-md">
+                <button
+                  type="button"
+                  className="flex w-full items-center rounded-sm px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => {
+                    setBulkEntryOpen(true);
+                    setAddMenuOpen(false);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Bulk Add Entries
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Bulk Entry Panel */}
+      {bulkEntryOpen && (
+        <BulkEntryForm
+          periodId={selectedPeriodId}
+          caregivers={caregivers}
+          onClose={() => {
+            setBulkEntryOpen(false);
+            setBulkEntryInitialRows([]);
+          }}
+          initialRows={bulkEntryInitialRows.length > 0 ? bulkEntryInitialRows : undefined}
+        />
+      )}
 
       {/* Filter Bar */}
       <Card>
@@ -916,9 +1093,38 @@ export function TimeEntries() {
           selectedCount={selectedRows.length}
           onDelete={() => setBulkDeleteDialogOpen(true)}
           onUpdate={() => setBulkUpdateDialogOpen(true)}
+          onDuplicate={handleBulkDuplicate}
+          onCopyToDateRange={handleCopyToDateRange}
           onClearSelection={clearRowSelection}
           itemLabel="time entry"
         />
+      )}
+
+      {/* Validation Warnings */}
+      {validationWarnings.length > 0 && showWarnings && (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-4 py-3 dark:border-yellow-900 dark:bg-yellow-950">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-yellow-800 dark:text-yellow-200">
+              <span className="font-medium">
+                {validationWarnings.length} warning{validationWarnings.length > 1 ? 's' : ''}
+              </span>
+              <span className="text-yellow-600 dark:text-yellow-400">
+                {[...new Set(validationWarnings.map((w) => w.type))].map((type) => {
+                  if (type === 'overlap') return 'Overlapping shifts';
+                  if (type === 'excessive-hours') return 'Excessive daily hours';
+                  return type;
+                }).join(', ')}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200"
+              onClick={() => setShowWarnings(false)}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Time Entries Table */}
@@ -1009,6 +1215,14 @@ export function TimeEntries() {
         caregivers={caregivers}
         onConfirm={handleBulkUpdate}
         isLoading={bulkUpdateTimeEntries.isPending}
+      />
+
+      {/* Copy to Date Range Dialog */}
+      <CopyToDateRangeDialog
+        open={copyToDateRangeOpen}
+        onOpenChange={setCopyToDateRangeOpen}
+        selectedEntries={selectedRows}
+        onGenerate={handleCopyToDateRangeGenerate}
       />
     </div>
   );
